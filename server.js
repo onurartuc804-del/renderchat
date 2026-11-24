@@ -1,106 +1,277 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
 const PORT = process.env.PORT || 3000;
+const GIPHY_API_KEY = process.env.GIPHY_API_KEY || "";
+
 app.use(express.static("public"));
-const history = [], users = new Map(), voiceRooms = new Map();
-const MAX_HISTORY = 100, GIF_LIMIT = 50;
-app.get("/api/gifs", async (req, res) => {
-  const apiKey = process.env.GIPHY_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "GIPHY_API_KEY ayarlanmamış." });
-  const query = String(req.query.q || "").trim().slice(0, 100);
-  const offset = Math.max(0, Math.min(parseInt(req.query.offset || "0", 10) || 0, 4999));
-  try {
-    const endpoint = query ? "https://api.giphy.com/v1/gifs/search" : "https://api.giphy.com/v1/gifs/trending";
-    const params = new URLSearchParams({ api_key: apiKey, limit: String(GIF_LIMIT), offset: String(offset), rating: "pg" });
-    if (query) params.set("q", query);
-    const response = await fetch(`${endpoint}?${params}`);
-    if (!response.ok) return res.status(502).json({ error: "GIPHY isteği başarısız." });
-    const result = await response.json();
-    const gifs = (result.data || []).map(gif => {
-      const images = gif.images || {};
-      return { id: gif.id, title: gif.title || "GIF", preview: images.fixed_width_small?.url || images.fixed_width?.url, url: images.original?.url || images.fixed_width?.url };
-    }).filter(gif => gif.preview && gif.url);
-    res.json({ gifs, nextOffset: offset + GIF_LIMIT, total: Number(result.pagination?.total_count || 0) });
-  } catch (error) { console.error("GIF error:", error); res.status(500).json({ error: "GIF yüklenemedi." }); }
-});
-function cleanText(value, maxLength = 500) { return String(value || "").replace(/[<>]/g, "").trim().slice(0, maxLength); }
-function validGifUrl(value) { try { const url = new URL(String(value)); return url.protocol === "https:" && /^media\d*\.giphy\.com$/i.test(url.hostname); } catch { return false; } }
-function broadcastUsers() { io.emit("users:update", Array.from(users.entries()).map(([id, username]) => ({ id, username }))); }
-function publicRoom(room) { return { id: room.id, hostName: room.hostName, members: Array.from(room.members).map(id => ({ id, username: users.get(id) || "Guest" })) }; }
-function sendRoomUpdate(room) { const data = { roomId: room.id, members: publicRoom(room).members }; room.members.forEach(id => io.to(id).emit("voice:room:update", data)); }
-function removeFromVoice(socket, announce = true) {
-  const roomId = socket.data.voiceRoomId;
-  if (!roomId) return;
-  const room = voiceRooms.get(roomId);
-  socket.data.voiceRoomId = null;
-  if (!room) return;
-  room.members.delete(socket.id);
-  if (announce) room.members.forEach(id => io.to(id).emit("voice:member:left", { roomId, id: socket.id, username: users.get(socket.id) || "Kullanıcı" }));
-  if (room.members.size === 0) voiceRooms.delete(roomId); else sendRoomUpdate(room);
+
+const users = new Map();
+const chatHistory = [];
+const voiceRooms = new Map();
+
+const MAX_HISTORY = 100;
+
+function cleanName(value) {
+  return String(value || "").trim().slice(0, 24);
 }
-io.on("connection", socket => {
-  socket.on("join", rawName => {
-    if (users.has(socket.id)) return;
-    const username = cleanText(rawName, 24) || "Guest";
-    users.set(socket.id, username);
-    socket.emit("chat:history", history);
-    broadcastUsers();
-    io.emit("chat:system", { text: `${username} sohbete katıldı.`, time: Date.now() });
-  });
-  socket.on("chat:message", raw => {
-    const username = users.get(socket.id);
-    if (!username || !raw || typeof raw !== "object") return;
-    const type = raw.type === "gif" ? "gif" : "text";
-    let message;
-    if (type === "gif") {
-      const url = String(raw.url || ""); if (!validGifUrl(url)) return;
-      message = { id: `${socket.id}-${Date.now()}`, userId: socket.id, username, type, url, title: cleanText(raw.title, 100), time: Date.now() };
-    } else {
-      const text = cleanText(raw.text, 1000); if (!text) return;
-      message = { id: `${socket.id}-${Date.now()}`, userId: socket.id, username, type, text, time: Date.now() };
+
+function roomKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function sendUsers() {
+  io.emit("users:update", [...users.values()]);
+}
+
+function leaveVoiceRoom(socket) {
+  const key = socket.data.voiceRoom;
+  if (!key) return;
+
+  socket.data.voiceRoom = null;
+
+  const room = voiceRooms.get(key);
+  if (!room) return;
+
+  room.members.delete(socket.id);
+  socket.leave(key);
+
+  // Oda sahibi çıkarsa oda kapanır
+  if (room.hostId === socket.id) {
+    for (const id of room.members) {
+      const member = io.sockets.sockets.get(id);
+
+      if (member) {
+        member.data.voiceRoom = null;
+        member.leave(key);
+        member.emit("voice:room-closed");
+      }
     }
-    history.push(message); if (history.length > MAX_HISTORY) history.shift(); io.emit("chat:message", message);
+
+    voiceRooms.delete(key);
+    return;
+  }
+
+  socket.to(key).emit("voice:peer-left", {
+    id: socket.id
   });
-  socket.on("voice:room:create", (_, callback) => {
-    if (!users.has(socket.id)) return callback?.({ ok: false, error: "Önce Chatbox'a giriş yap." });
-    if (socket.data.voiceRoomId) return callback?.({ ok: false, error: "Zaten bir odadasın." });
-    const roomId = `voice-${socket.id}`;
-    const room = { id: roomId, hostId: socket.id, hostName: users.get(socket.id), members: new Set([socket.id]) };
-    voiceRooms.set(roomId, room); socket.data.voiceRoomId = roomId;
-    callback?.({ ok: true, room: publicRoom(room) });
+}
+
+// GIPHY GIF arama
+app.get("/api/gifs", async (req, res) => {
+  try {
+    if (!GIPHY_API_KEY) {
+      return res.status(500).json({
+        error: "Render ayarlarında GIPHY_API_KEY eksik."
+      });
+    }
+
+    const query = String(req.query.q || "funny").slice(0, 100);
+
+    const url = new URL("https://api.giphy.com/v1/gifs/search");
+    url.searchParams.set("api_key", GIPHY_API_KEY);
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", "24");
+    url.searchParams.set("rating", "pg");
+
+    const response = await fetch(url);
+    const result = await response.json();
+
+    if (!response.ok) {
+      return res.status(500).json({
+        error: "GIF araması başarısız."
+      });
+    }
+
+    const gifs = (result.data || []).map(gif => ({
+      id: gif.id,
+      title: gif.title,
+      url: gif.images?.fixed_height?.url,
+      preview: gif.images?.fixed_height_small?.url
+    })).filter(gif => gif.url);
+
+    res.json(gifs);
+  } catch (error) {
+    console.error("GIF error:", error);
+    res.status(500).json({ error: "GIF arama hatası." });
+  }
+});
+
+io.on("connection", socket => {
+  socket.data.voiceRoom = null;
+
+  // Genel sohbet giriş
+  socket.on("user:join", name => {
+    const username = cleanName(name);
+    if (!username) return;
+
+    users.set(socket.id, username);
+    socket.data.username = username;
+
+    socket.emit("chat:history", chatHistory);
+    sendUsers();
   });
-  socket.on("voice:room:join", (payload, callback) => {
-    if (!users.has(socket.id)) return callback?.({ ok: false, error: "Önce Chatbox'a giriş yap." });
-    if (socket.data.voiceRoomId) return callback?.({ ok: false, error: "Önce bulunduğun odadan çık." });
-    const hostName = cleanText(payload?.hostName, 24).toLowerCase();
-    const room = Array.from(voiceRooms.values()).find(item => item.hostName.toLowerCase() === hostName);
-    if (!room) return callback?.({ ok: false, error: "Bu kullanıcı adına ait açık bir oda bulunamadı." });
-    if (room.members.size >= 8) return callback?.({ ok: false, error: "Oda dolu (en fazla 8 kişi)." });
-    room.members.add(socket.id); socket.data.voiceRoomId = room.id;
-    sendRoomUpdate(room);
-    callback?.({ ok: true, room: publicRoom(room) });
+
+  // Genel sohbet mesajı
+  socket.on("chat:message", message => {
+    const username = users.get(socket.id);
+    if (!username) return;
+
+    const text = String(message || "").trim().slice(0, 1000);
+    if (!text) return;
+
+    const item = {
+      username,
+      text,
+      time: Date.now()
+    };
+
+    chatHistory.push(item);
+    if (chatHistory.length > MAX_HISTORY) {
+      chatHistory.shift();
+    }
+
+    io.emit("chat:message", item);
   });
+
+  // Sesli oda oluştur
+  socket.on("voice:create", callback => {
+    const username = users.get(socket.id);
+
+    if (!username) {
+      return callback?.({
+        ok: false,
+        error: "Önce Chatbox'a giriş yap."
+      });
+    }
+
+    leaveVoiceRoom(socket);
+
+    const key = roomKey(username);
+
+    if (voiceRooms.has(key)) {
+      return callback?.({
+        ok: false,
+        error: "Bu kullanıcı adına ait oda zaten açık."
+      });
+    }
+
+    voiceRooms.set(key, {
+      hostId: socket.id,
+      hostName: username,
+      members: new Set([socket.id])
+    });
+
+    socket.join(key);
+    socket.data.voiceRoom = key;
+
+    callback?.({
+      ok: true,
+      roomName: username,
+      peers: []
+    });
+  });
+
+  // Sesli odaya kullanıcı adıyla katıl
+  socket.on("voice:join", (hostName, callback) => {
+    const username = users.get(socket.id);
+
+    if (!username) {
+      return callback?.({
+        ok: false,
+        error: "Önce Chatbox'a giriş yap."
+      });
+    }
+
+    const key = roomKey(hostName);
+    const room = voiceRooms.get(key);
+
+    if (!room) {
+      return callback?.({
+        ok: false,
+        error: "Bu kullanıcı adına ait açık oda bulunamadı."
+      });
+    }
+
+    if (room.members.has(socket.id)) {
+      return callback?.({
+        ok: false,
+        error: "Zaten bu odadasın."
+      });
+    }
+
+    leaveVoiceRoom(socket);
+
+    const peers = [...room.members].map(id => ({
+      id,
+      name: users.get(id) || "Kullanıcı"
+    }));
+
+    room.members.add(socket.id);
+    socket.join(key);
+    socket.data.voiceRoom = key;
+
+    socket.to(key).emit("voice:peer-joined", {
+      id: socket.id,
+      name: username
+    });
+
+    callback?.({
+      ok: true,
+      roomName: room.hostName,
+      peers
+    });
+  });
+
+  // WebRTC sinyallerini odadaki hedef kullanıcıya ilet
   socket.on("voice:signal", payload => {
-    const room = voiceRooms.get(socket.data.voiceRoomId);
-    if (!room || !room.members.has(payload?.to) || !payload?.signal) return;
-    io.to(payload.to).emit("voice:signal", { from: socket.id, signal: payload.signal });
+    const key = socket.data.voiceRoom;
+    const room = voiceRooms.get(key);
+
+    if (!room || !payload?.to || !room.members.has(payload.to)) {
+      return;
+    }
+
+    io.to(payload.to).emit("voice:signal", {
+      from: socket.id,
+      data: payload.data
+    });
   });
-  socket.on("voice:room:chat", payload => {
-    const room = voiceRooms.get(socket.data.voiceRoomId), text = cleanText(payload?.text, 500);
-    if (!room || !text) return;
-    const message = { roomId: room.id, username: users.get(socket.id) || "Guest", text, time: Date.now() };
-    room.members.forEach(id => io.to(id).emit("voice:room:chat", message));
+
+  // Sesli oda yazılı sohbeti
+  socket.on("voice:message", message => {
+    const key = socket.data.voiceRoom;
+    const room = voiceRooms.get(key);
+    const username = users.get(socket.id);
+
+    if (!room || !username) return;
+
+    const text = String(message || "").trim().slice(0, 500);
+    if (!text) return;
+
+    io.to(key).emit("voice:message", {
+      username,
+      text,
+      time: Date.now()
+    });
   });
-  socket.on("voice:room:leave", () => removeFromVoice(socket));
+
+  socket.on("voice:leave", () => {
+    leaveVoiceRoom(socket);
+  });
+
   socket.on("disconnect", () => {
-    removeFromVoice(socket);
-    const username = users.get(socket.id); if (!username) return;
-    users.delete(socket.id); broadcastUsers();
-    io.emit("chat:system", { text: `${username} sohbetten ayrıldı.`, time: Date.now() });
+    leaveVoiceRoom(socket);
+    users.delete(socket.id);
+    sendUsers();
   });
 });
-server.listen(PORT, () => console.log(`Chatbox running on port ${PORT}`));
+
+server.listen(PORT, () => {
+  console.log(`Chatbox çalışıyor: port ${PORT}`);
+});
