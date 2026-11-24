@@ -1,276 +1,419 @@
 (() => {
-  "use strict";
+  const socket = window.chatboxSocket;
+  if (!socket) {
+    console.error("Chatbox Socket.IO bağlantısı bulunamadı.");
+    return;
+  }
+
   const $ = id => document.getElementById(id);
-  const createBtn = $("createVoiceRoom");
-  const joinBtn = $("joinVoiceRoom");
-  const roomModal = $("voiceRoomModal");
-  const closeRoomModal = $("closeVoiceRoomModal");
-  const joinRoomForm = $("joinVoiceRoomForm");
-  const roomHostInput = $("roomHostName");
-  const roomStatus = $("voiceRoomStatus");
-  const voiceBar = $("voiceBar");
-  const voiceRoomTitle = $("voiceRoomTitle");
-  const voiceMembers = $("voiceMembers");
-  const micBtn = $("voiceMicButton");
-  const roomChatBtn = $("voiceChatButton");
-  const leaveBtn = $("leaveVoiceRoom");
-  const roomChat = $("voiceChatPanel");
-  const roomChatMessages = $("voiceChatMessages");
-  const roomChatForm = $("voiceChatForm");
-  const roomChatInput = $("voiceChatInput");
-  const audioBin = $("voiceAudioBin");
 
-  let socket = null;
-  let room = null;
+  const panel = $("voicePanel");
+  const createBtn = $("createVoiceBtn");
+  const joinBtn = $("joinVoiceBtn");
+  const closeBtn = $("voiceCloseBtn");
+  const leaveBtn = $("voiceLeaveBtn");
+  const micBtn = $("voiceMicBtn");
+  const textToggle = $("voiceTextToggle");
+
+  const roomTitle = $("voiceRoomTitle");
+  const status = $("voiceStatus");
+  const peersContainer = $("voicePeers");
+
+  const textPanel = $("voiceTextPanel");
+  const voiceMessages = $("voiceMessages");
+  const voiceMessageForm = $("voiceMessageForm");
+  const voiceMessageInput = $("voiceMessageInput");
+
+  const joinSound = $("joinSound");
+  const leaveSound = $("leaveSound");
+
   let localStream = null;
-  let micOn = true;
-  const peers = new Map();
-  const remoteAudio = new Map();
-  let joinSound, leaveSound;
+  let currentRoom = "";
+  let micEnabled = true;
+  let isHost = false;
 
-  function toast(message) {
-    const node = $("toast");
-    if (!node) return;
-    node.textContent = message;
-    node.classList.add("show");
-    clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => node.classList.remove("show"), 2800);
-  }
+  const peerConnections = new Map();
+  const peerNames = new Map();
+  const pendingCandidates = new Map();
 
-  function getSocket() {
-    socket = window.chatboxSocket || null;
-    if (!socket || !socket.connected) {
-      toast("Sohbet bağlantısı hazır değil.");
-      return null;
-    }
-    return socket;
-  }
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  };
 
-  function playSound(kind) {
-    const audio = kind === "join" ? joinSound : leaveSound;
+  function playSound(audio) {
     if (!audio) return;
-    try { audio.currentTime = 0; audio.play().catch(() => {}); } catch (_) {}
-  }
 
-  function openModal() {
-    roomStatus.textContent = "Odaya katılmak için oda kuran kişinin kullanıcı adını yaz.";
-    roomModal.classList.remove("hidden");
-    roomModal.setAttribute("aria-hidden", "false");
-    roomHostInput.focus();
-  }
-  function closeModal() {
-    roomModal.classList.add("hidden");
-    roomModal.setAttribute("aria-hidden", "true");
-  }
+    try {
+      audio.pause();
+      audio.currentTime = 0;
 
-  async function requestMic() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("Bu tarayıcı mikrofon erişimini desteklemiyor.");
+      const promise = audio.play();
+      if (promise) promise.catch(() => {});
+    } catch (error) {
+      console.warn("Ses efekti oynatılamadı:", error);
     }
-    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
   }
 
-  function showRoom(hostName) {
-    voiceRoomTitle.textContent = `${hostName} adlı kişinin sesli odası`;
-    voiceBar.classList.remove("hidden");
-    roomChat.classList.add("hidden");
-    micBtn.textContent = "🎙 Mikrofon açık";
-    micBtn.classList.remove("voice-muted");
-    micOn = true;
-    renderRoomMembers();
-  }
+  async function getMicrophone() {
+    if (localStream) return localStream;
 
-  function renderRoomMembers() {
-    if (!voiceMembers) return;
-    voiceMembers.replaceChildren();
-    if (!room) return;
-    room.members.forEach(member => {
-      const pill = document.createElement("span");
-      pill.className = "voice-member-pill";
-      pill.textContent = member.username + (member.id === socket.id ? " (sen)" : "");
-      voiceMembers.appendChild(pill);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Mikrofon bu tarayıcıda desteklenmiyor.");
+    }
+
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
     });
+
+    return localStream;
   }
 
-  function makePeer(peerId, peerName, initiator) {
-    if (peers.has(peerId)) return peers.get(peerId);
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
-      ]
-    });
-    peers.set(peerId, pc);
-    if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  function showRoom(name) {
+    currentRoom = name;
+    roomTitle.textContent = name + " sesli odası";
+    status.textContent = "Sesli odaya bağlandın";
+    panel.classList.remove("hidden");
+    peersContainer.innerHTML = "";
+    voiceMessages.innerHTML = "";
+    micEnabled = true;
+    micBtn.textContent = "🎙️ Mikrofon açık";
+  }
+
+  function addPeerCard(id, name) {
+    peerNames.set(id, name || "Kullanıcı");
+
+    let card = document.getElementById("voice-peer-" + id);
+    if (card) return;
+
+    card = document.createElement("div");
+    card.className = "voice-peer";
+    card.id = "voice-peer-" + id;
+    card.textContent = name || "Kullanıcı";
+    peersContainer.appendChild(card);
+  }
+
+  function removePeer(id) {
+    const pc = peerConnections.get(id);
+
+    if (pc) {
+      pc.close();
+      peerConnections.delete(id);
+    }
+
+    pendingCandidates.delete(id);
+    peerNames.delete(id);
+
+    const card = document.getElementById("voice-peer-" + id);
+    if (card) card.remove();
+
+    const audio = document.getElementById("voice-audio-" + id);
+    if (audio) audio.remove();
+  }
+
+  function createPeerConnection(id, name) {
+    if (peerConnections.has(id)) {
+      return peerConnections.get(id);
+    }
+
+    const pc = new RTCPeerConnection(rtcConfig);
+    peerConnections.set(id, pc);
+    pendingCandidates.set(id, []);
+
+    addPeerCard(id, name);
+
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+    }
+
     pc.onicecandidate = event => {
-      if (event.candidate && socket) socket.emit("voice:signal", { to: peerId, signal: { candidate: event.candidate } });
+      if (!event.candidate) return;
+
+      socket.emit("voice:signal", {
+        to: id,
+        data: {
+          type: "candidate",
+          candidate: event.candidate
+        }
+      });
     };
+
     pc.ontrack = event => {
-      let audio = remoteAudio.get(peerId);
+      let audio = document.getElementById("voice-audio-" + id);
+
       if (!audio) {
         audio = document.createElement("audio");
+        audio.id = "voice-audio-" + id;
         audio.autoplay = true;
         audio.playsInline = true;
-        audio.setAttribute("aria-label", `${peerName} ses`);
-        audioBin.appendChild(audio);
-        remoteAudio.set(peerId, audio);
+        document.body.appendChild(audio);
       }
+
       audio.srcObject = event.streams[0];
       audio.play().catch(() => {});
     };
+
     pc.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(pc.connectionState)) removePeer(peerId);
+      if (pc.connectionState === "connected") {
+        status.textContent = "Ses bağlantısı kuruldu";
+      }
+
+      if (
+        pc.connectionState === "failed" ||
+        pc.connectionState === "closed"
+      ) {
+        removePeer(id);
+      }
     };
-    if (initiator) {
-      pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
-        socket.emit("voice:signal", { to: peerId, signal: { description: pc.localDescription } });
-      }).catch(() => toast("Ses bağlantısı kurulamadı."));
-    }
+
     return pc;
   }
 
-  async function handleSignal(from, signal) {
-    const member = room && room.members.find(item => item.id === from);
-    const pc = makePeer(from, member ? member.username : "Katılımcı", false);
-    try {
-      if (signal.description) {
-        await pc.setRemoteDescription(signal.description);
-        if (signal.description.type === "offer") {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit("voice:signal", { to: from, signal: { description: pc.localDescription } });
-        }
-      } else if (signal.candidate) {
-        await pc.addIceCandidate(signal.candidate);
-      }
-    } catch (error) { console.error("WebRTC signal error", error); }
-  }
+  async function sendOffer(id, name) {
+    const pc = createPeerConnection(id, name);
 
-  function removePeer(peerId) {
-    const pc = peers.get(peerId);
-    if (pc) { try { pc.close(); } catch (_) {} peers.delete(peerId); }
-    const audio = remoteAudio.get(peerId);
-    if (audio) { audio.srcObject = null; audio.remove(); remoteAudio.delete(peerId); }
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    socket.emit("voice:signal", {
+      to: id,
+      data: {
+        type: "offer",
+        sdp: pc.localDescription
+      }
+    });
   }
 
   async function createRoom() {
-    if (room) return toast("Zaten bir sesli odadasın.");
-    const activeSocket = getSocket();
-    if (!activeSocket) return;
+    if (currentRoom) return;
+
     try {
-      localStream = await requestMic();
-      const hostName = window.chatboxUsername || localStorage.getItem("chatbox_username") || "Kullanıcı";
-      activeSocket.emit("voice:room:create", {}, response => {
-        if (!response || !response.ok) {
-          localStream.getTracks().forEach(track => track.stop()); localStream = null;
-          toast(response && response.error || "Oda oluşturulamadı."); return;
+      await getMicrophone();
+
+      socket.emit("voice:create", result => {
+        if (!result?.ok) {
+          alert(result?.error || "Oda oluşturulamadı.");
+          stopMicrophone();
+          return;
         }
-        room = response.room;
-        showRoom(hostName);
-        toast("Sesli oda kuruldu. Arkadaşların kullanıcı adınla katılabilir.");
+
+        isHost = true;
+        showRoom(result.roomName);
+        playSound(joinSound);
       });
     } catch (error) {
-      toast(error.name === "NotAllowedError" ? "Mikrofon izni verilmedi." : error.message || "Mikrofon açılamadı.");
+      alert(error.message || "Mikrofon izni gerekli.");
     }
   }
 
-  async function joinRoom(hostName) {
-    if (room) return toast("Zaten bir sesli odadasın.");
-    const activeSocket = getSocket();
-    if (!activeSocket) return;
-    hostName = String(hostName || "").trim();
-    if (!hostName) return toast("Oda kuran kişinin kullanıcı adını yaz.");
+  async function joinRoom() {
+    if (currentRoom) return;
+
+    const hostName = prompt("Oda sahibinin kullanıcı adını yaz:");
+    if (!hostName || !hostName.trim()) return;
+
     try {
-      localStream = await requestMic();
-      activeSocket.emit("voice:room:join", { hostName }, response => {
-        if (!response || !response.ok) {
-          localStream.getTracks().forEach(track => track.stop()); localStream = null;
-          roomStatus.textContent = response && response.error || "Odaya katılınamadı.";
-          toast(roomStatus.textContent); return;
+      await getMicrophone();
+
+      socket.emit("voice:join", hostName.trim(), async result => {
+        if (!result?.ok) {
+          alert(result?.error || "Odaya katılınamadı.");
+          stopMicrophone();
+          return;
         }
-        room = response.room;
-        closeModal();
-        showRoom(room.hostName);
-        toast("Sesli odaya katıldın.");
+
+        isHost = false;
+        showRoom(result.roomName);
+        playSound(joinSound);
+
+        // Oda içindeki mevcut kişilerle bağlantı başlat
+        for (const peer of result.peers || []) {
+          await sendOffer(peer.id, peer.name);
+        }
       });
     } catch (error) {
-      toast(error.name === "NotAllowedError" ? "Mikrofon izni verilmedi." : error.message || "Mikrofon açılamadı.");
+      alert(error.message || "Mikrofon izni gerekli.");
     }
+  }
+
+  function stopMicrophone() {
+    if (!localStream) return;
+
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+
+  function closeRoomUI() {
+    panel.classList.add("hidden");
+    textPanel.classList.add("hidden");
+
+    for (const id of [...peerConnections.keys()]) {
+      removePeer(id);
+    }
+
+    peersContainer.innerHTML = "";
+    voiceMessages.innerHTML = "";
+
+    stopMicrophone();
+
+    currentRoom = "";
+    isHost = false;
+    micEnabled = true;
   }
 
   function leaveRoom() {
-    if (!room) return;
-    if (socket && socket.connected) socket.emit("voice:room:leave");
-    peers.forEach((_, id) => removePeer(id));
-    if (localStream) { localStream.getTracks().forEach(track => track.stop()); localStream = null; }
-    room = null;
-    voiceBar.classList.add("hidden");
-    roomChat.classList.add("hidden");
-    roomChatMessages.replaceChildren();
-    toast("Sesli odadan ayrıldın.");
-  }
+    if (!currentRoom) return;
 
-  function renderRoomChat(message) {
-    const row = document.createElement("div");
-    row.className = "voice-chat-message";
-    const name = document.createElement("strong"); name.textContent = message.username || "Kullanıcı";
-    const text = document.createElement("span"); text.textContent = message.text || "";
-    row.append(name, text); roomChatMessages.appendChild(row);
-    roomChatMessages.scrollTop = roomChatMessages.scrollHeight;
+    playSound(leaveSound);
+    socket.emit("voice:leave");
+    closeRoomUI();
   }
 
   createBtn.addEventListener("click", createRoom);
-  joinBtn.addEventListener("click", openModal);
-  closeRoomModal.addEventListener("click", closeModal);
-  roomModal.addEventListener("click", event => { if (event.target === roomModal) closeModal(); });
-  joinRoomForm.addEventListener("submit", event => { event.preventDefault(); joinRoom(roomHostInput.value); });
+  joinBtn.addEventListener("click", joinRoom);
+  closeBtn.addEventListener("click", leaveRoom);
+  leaveBtn.addEventListener("click", leaveRoom);
+
   micBtn.addEventListener("click", () => {
     if (!localStream) return;
-    micOn = !micOn;
-    localStream.getAudioTracks().forEach(track => track.enabled = micOn);
-    micBtn.textContent = micOn ? "🎙 Mikrofon açık" : "🔇 Mikrofon kapalı";
-    micBtn.classList.toggle("voice-muted", !micOn);
+
+    micEnabled = !micEnabled;
+
+    localStream.getAudioTracks().forEach(track => {
+      track.enabled = micEnabled;
+    });
+
+    micBtn.textContent = micEnabled
+      ? "🎙️ Mikrofon açık"
+      : "🔇 Mikrofon kapalı";
   });
-  roomChatBtn.addEventListener("click", () => roomChat.classList.toggle("hidden"));
-  leaveBtn.addEventListener("click", leaveRoom);
-  roomChatForm.addEventListener("submit", event => {
+
+  textToggle.addEventListener("click", () => {
+    textPanel.classList.toggle("hidden");
+  });
+
+  voiceMessageForm.addEventListener("submit", event => {
     event.preventDefault();
-    const text = roomChatInput.value.trim();
-    if (!text || !room || !socket) return;
-    socket.emit("voice:room:chat", { text });
-    roomChatInput.value = "";
+
+    const text = voiceMessageInput.value.trim();
+    if (!text) return;
+
+    socket.emit("voice:message", text);
+    voiceMessageInput.value = "";
   });
 
-  joinSound = new Audio("/sounds/join.m4a");
-  leaveSound = new Audio("/sounds/leave.m4a");
-  joinSound.preload = "auto"; leaveSound.preload = "auto";
+  function addVoiceMessage(data) {
+    const row = document.createElement("div");
+    row.className = "voice-message";
 
-  // App.js socket bağlantısını kurduğunda aynı socket'i kullan.
-  const waitForSocket = setInterval(() => {
-    if (!window.chatboxSocket) return;
-    clearInterval(waitForSocket);
-    socket = window.chatboxSocket;
-    socket.on("voice:room:update", data => {
-      if (!room || !data || data.roomId !== room.id) return;
-      const previousIds = new Set(room.members.map(member => member.id));
-      room.members = data.members;
-      renderRoomMembers();
-      data.members.forEach(member => {
-        if (member.id !== socket.id && !previousIds.has(member.id)) {
-          playSound("join");
-          makePeer(member.id, member.username, true);
+    const name = document.createElement("strong");
+    name.textContent = data.username + ": ";
+
+    const text = document.createElement("span");
+    text.textContent = data.text;
+
+    row.append(name, text);
+    voiceMessages.appendChild(row);
+    voiceMessages.scrollTop = voiceMessages.scrollHeight;
+  }
+
+  socket.on("voice:message", addVoiceMessage);
+
+  // Yeni kişi odaya katıldı
+  socket.on("voice:peer-joined", data => {
+    if (!currentRoom) return;
+
+    addPeerCard(data.id, data.name);
+    playSound(joinSound);
+  });
+
+  // Odadaki kişi ayrıldı
+  socket.on("voice:peer-left", data => {
+    if (!currentRoom) return;
+
+    removePeer(data.id);
+    playSound(leaveSound);
+  });
+
+  // Oda sahibi odayı kapattı
+  socket.on("voice:room-closed", () => {
+    if (!currentRoom) return;
+
+    playSound(leaveSound);
+    closeRoomUI();
+    alert("Oda sahibi sesli odayı kapattı.");
+  });
+
+  // WebRTC offer / answer / ICE
+  socket.on("voice:signal", async payload => {
+    if (!currentRoom || !payload?.from || !payload?.data) return;
+
+    const id = payload.from;
+    const data = payload.data;
+
+    try {
+      let pc = peerConnections.get(id);
+
+      if (!pc) {
+        pc = createPeerConnection(id, peerNames.get(id) || "Kullanıcı");
+      }
+
+      if (data.type === "offer") {
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(data.sdp)
+        );
+
+        const candidates = pendingCandidates.get(id) || [];
+        for (const candidate of candidates) {
+          await pc.addIceCandidate(candidate);
         }
-      });
-    });
-    socket.on("voice:member:left", data => {
-      if (!room || data.roomId !== room.id) return;
-      playSound("leave");
-      removePeer(data.id);
-      room.members = room.members.filter(member => member.id !== data.id);
-      renderRoomMembers();
-    });
-    socket.on("voice:signal", data => { if (room && data && data.from) handleSignal(data.from, data.signal); });
-    socket.on("voice:room:chat", message => { if (room && message.roomId === room.id) renderRoomChat(message); });
-    socket.on("disconnect", () => { if (room) leaveRoom(); });
-  }, 150);
+        pendingCandidates.set(id, []);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        socket.emit("voice:signal", {
+          to: id,
+          data: {
+            type: "answer",
+            sdp: pc.localDescription
+          }
+        });
+      }
+
+      if (data.type === "answer") {
+        await pc.setRemoteDescription(
+          new RTCSessionDescription(data.sdp)
+        );
+
+        const candidates = pendingCandidates.get(id) || [];
+        for (const candidate of candidates) {
+          await pc.addIceCandidate(candidate);
+        }
+        pendingCandidates.set(id, []);
+      }
+
+      if (data.type === "candidate" && data.candidate) {
+        const candidate = new RTCIceCandidate(data.candidate);
+
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(candidate);
+        } else {
+          const queue = pendingCandidates.get(id) || [];
+          queue.push(candidate);
+          pendingCandidates.set(id, queue);
+        }
+      }
+    } catch (error) {
+      console.error("WebRTC bağlantı hatası:", error);
+    }
+  });
 })();
