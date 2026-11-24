@@ -1,125 +1,69 @@
 <!doctype html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="Chatbox — arkadaşlarınla gerçek zamanlı sohbet et ve GIF gönder.">
-  <title>Chatbox — Sohbetin yeni adresi</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10101b">
+  <title>Chatbox — Canlı Sohbet</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Sohbet menüsü">
-      <a class="brand" href="#" aria-label="Chatbox ana sayfa">
-        <span class="brand-mark">C</span>
-        <span class="brand-name">chatbox<span>.</span></span>
-      </a>
-
-      <div class="workspace-label">ÇALIŞMA ALANI</div>
-      <button class="server-card active" type="button">
-        <span class="server-icon">#</span>
-        <span class="server-copy">
-          <strong>Chatbox Topluluğu</strong>
-          <small>Genel sohbet alanı</small>
-        </span>
-        <span class="server-chevron">⌄</span>
-      </button>
-
-      <div class="side-section">
-        <div class="side-heading"><span>SOHBET ODALARI</span><span class="side-plus">+</span></div>
-        <button class="channel active" type="button"><span>#</span> genel-sohbet <i></i></button>
-        <button class="channel" type="button"><span>#</span> oyun <i></i></button>
-        <button class="channel" type="button"><span>#</span> medya <i></i></button>
-      </div>
-
-      <div class="side-section online-section">
-        <div class="side-heading"><span>ÇEVRİM İÇİ</span><span id="onlineCount" class="count">0</span></div>
-        <ul id="userList" class="user-list"></ul>
-      </div>
-
-      <div class="sidebar-bottom">
-        <div class="profile-avatar" id="profileAvatar">?</div>
-        <div class="profile-info"><strong id="profileName">Misafir</strong><small><span class="status-dot"></span> Çevrim içi</small></div>
-        <button class="profile-more" type="button" aria-label="Profil seçenekleri">•••</button>
-      </div>
-    </aside>
-
-    <main class="main-panel">
-      <header class="topbar">
-        <div class="mobile-brand"><span class="brand-mark">C</span><strong>chatbox<span>.</span></strong></div>
-        <div class="channel-title">
-          <span class="hash-icon">#</span>
-          <div><h1>genel-sohbet</h1><p>Toplulukla sohbet et</p></div>
-        </div>
-        <div class="topbar-actions">
-          <div class="connection-status"><span class="status-dot"></span><span>Canlı</span></div>
-          <button class="icon-button" type="button" aria-label="Bildirimler" title="Bildirimler">♧</button>
-          <button class="icon-button" type="button" aria-label="Yardım" title="Yardım">?</button>
-        </div>
-      </header>
-
-      <section class="welcome-banner">
-        <div class="welcome-content">
-          <span class="welcome-kicker">CHATBOX TOPLULUĞU</span>
-          <h2>Selam! Sohbet başlasın 👋</h2>
-          <p>Bir şeyler yaz, yeni insanlarla tanış veya sohbetine bir GIF ekle.</p>
-        </div>
-        <div class="welcome-art" aria-hidden="true"><span class="art-orbit orbit-one"></span><span class="art-orbit orbit-two"></span><span class="art-bubble">✦</span><span class="art-spark">✧</span></div>
-      </section>
-
-      <section id="chatScreen" class="chat-area" hidden>
-        <div class="chat-date"><span></span><small>SOHBET</small><span></span></div>
-        <div id="messages" class="messages" aria-live="polite" aria-relevant="additions"></div>
-      </section>
-
-      <section id="joinScreen" class="join-card">
-        <div class="join-icon">✦</div>
-        <h2>Sohbete katıl</h2>
-        <p>Bir kullanıcı adı seç ve Chatbox topluluğuna katıl.</p>
-        <form id="joinForm" class="join-form">
-          <label for="nameInput">Kullanıcı adı</label>
-          <input id="nameInput" maxlength="20" placeholder="Örn. MinecraftFan" autocomplete="nickname" required>
-          <button type="submit">Sohbete katıl <span>→</span></button>
-        </form>
-        <small class="join-note">Katılarak sohbet kurallarına uymayı kabul edersin.</small>
-      </section>
-
-      <footer class="composer-wrap">
-        <form id="messageForm" class="composer">
-          <button id="gifButton" class="composer-tool gif-tool" type="button" title="GIF ara" aria-label="GIF ara">GIF</button>
-          <input id="messageInput" maxlength="500" placeholder="Mesajını buraya yaz..." autocomplete="off" aria-label="Mesaj yaz">
-          <div class="composer-right">
-            <span class="composer-hint">Enter ↵</span>
-            <button class="send-button" type="submit" aria-label="Mesajı gönder" title="Gönder">➤</button>
-          </div>
-        </form>
-        <div class="composer-caption"><span>Chatbox'ta saygılı olmayı unutma 💜</span><span>Powered by GIPHY</span></div>
-      </footer>
-    </main>
-  </div>
-
-  <section id="gifModal" class="modal" hidden>
-    <div class="gif-panel" role="dialog" aria-modal="true" aria-labelledby="gifTitle">
-      <div class="modal-header">
-        <div><span class="modal-kicker">GIF KÜTÜPHANESİ</span><h2 id="gifTitle">Bir GIF seç 🎞️</h2></div>
-        <button id="closeGif" class="close" type="button" aria-label="GIF penceresini kapat">×</button>
-      </div>
-      <form id="gifSearchForm" class="gif-search">
-        <span class="search-symbol">⌕</span>
-        <input id="gifQuery" placeholder="GIF ara: komik, kedi, Minecraft..." autocomplete="off">
-        <button type="submit">Ara</button>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <main class="app-shell">
+    <section id="joinScreen" class="join-screen">
+      <div class="brand-mark">C<span>.</span></div>
+      <div class="eyebrow">REAL-TIME COMMUNITY</div>
+      <h1>Herkes burada.<br><span>Sohbete katıl.</span></h1>
+      <p class="join-description">Arkadaşlarınla anında konuş, GIF gönder ve sohbetin akışına katıl.</p>
+      <form id="joinForm" class="join-form">
+        <label for="nameInput">Kullanıcı adın</label>
+        <input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="Bir isim seç..." required>
+        <button class="primary-button" type="submit">Sohbete katıl <span>→</span></button>
       </form>
-      <div class="gif-tabs"><span class="gif-tab active">Keşfet</span><span class="gif-tab">Tepkiler</span><span class="gif-tab">Komik</span></div>
-      <div id="gifResults" class="gif-results"><p class="muted">Popüler GIF'ler yükleniyor...</p></div>
-      <div class="gif-footer"><span>Powered by GIPHY</span><span>GIF'e dokunarak sohbete gönder</span></div>
-    </div>
-  </section>
+      <div class="join-footer"><span class="live-dot"></span> Canlı sohbet <span class="footer-separator">·</span> Ücretsiz</div>
+    </section>
 
+    <section id="chatScreen" class="chat-screen hidden" aria-hidden="true">
+      <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mini">C<span>.</span></div><span>chatbox</span></div>
+        <div class="channel-label">KANALLAR</div>
+        <div class="channel active"><span class="hash">#</span> genel <span class="channel-pulse"></span></div>
+        <div class="sidebar-bottom">
+          <div class="user-avatar" id="profileAvatar">U</div>
+          <div class="profile-info"><strong id="profileName">Kullanıcı</strong><small><span class="live-dot"></span> Çevrimiçi</small></div>
+        </div>
+      </aside>
+
+      <div class="chat-main">
+        <header class="chat-header">
+          <div class="header-channel"><span class="hash">#</span><div><strong>genel</strong><small>Herkesle sohbet et</small></div></div>
+          <div class="header-online"><span class="live-dot"></span><strong id="onlineCount">1</strong><span>çevrimiçi</span></div>
+        </header>
+        <div class="chat-content">
+          <div class="welcome-card"><div class="welcome-icon">✦</div><div><strong>Genel kanala hoş geldin!</strong><p>İlk mesajı sen gönder, sohbet başlasın.</p></div></div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+        </div>
+        <form id="messageForm" class="message-form">
+          <button id="gifButton" class="gif-button" type="button" aria-label="GIF seç">GIF</button>
+          <input id="messageInput" maxlength="1000" autocomplete="off" placeholder="#genel kanalına mesaj gönder" aria-label="Mesaj">
+          <button class="send-button" type="submit" aria-label="Mesaj gönder">↑</button>
+        </form>
+        <div class="message-hint">Enter ile gönder <span>·</span> GIF ile tepkini göster</div>
+      </div>
+      <aside class="members-panel"><div class="members-title">ÇEVRİMİÇİ — <span id="memberCount">1</span></div><div id="userList" class="user-list"></div></aside>
+    </section>
+  </main>
+
+  <div id="gifModal" class="gif-modal hidden" role="dialog" aria-modal="true" aria-labelledby="gifTitle">
+    <div class="gif-dialog">
+      <header class="gif-header"><div><strong id="gifTitle">GIF seç</strong><small>Bir GIF bul ve sohbete gönder</small></div><button id="closeGif" class="close-gif" type="button" aria-label="Kapat">×</button></header>
+      <form id="gifSearchForm" class="gif-search"><span>⌕</span><input id="gifQuery" maxlength="80" placeholder="GIF ara..." autocomplete="off"><button type="submit">Ara</button></form>
+      <div id="gifResults" class="gif-results"><div class="gif-message">Trend GIF'ler yükleniyor...</div></div>
+      <div class="gif-attribution">Powered by <strong>GIPHY</strong></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>
