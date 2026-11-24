@@ -2,36 +2,100 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1020">
-  <title>Chatbox — Canlı Sohbet</title>
-  <link rel="stylesheet" href="/style.css?v=4">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatbox</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="app-shell">
-    <section id="joinScreen" class="join-screen">
-      <div class="brand-mark">C<span>.</span></div><div class="eyebrow">CHATBOX COMMUNITY</div>
-      <h1>Herkes burada.<br><span>Sohbete katıl.</span></h1>
-      <p class="join-description">Arkadaşlarınla anında konuş, GIF gönder ve sohbetin akışına katıl.</p>
-      <form id="joinForm" class="join-form"><label for="nameInput">Kullanıcı adın</label><input id="nameInput" maxlength="24" autocomplete="nickname" placeholder="Bir isim seç..." required><button class="primary-button" type="submit">Kaydet ve sohbete gir <span>→</span></button></form>
-      <div class="join-footer"><span class="live-dot"></span>Canlı sohbet · Ücretsiz</div>
-    </section>
-    <section id="chatScreen" class="chat-screen hidden" aria-hidden="true">
-      <aside class="sidebar"><div class="sidebar-brand"><div class="brand-mini">C<span>.</span></div><span>chatbox</span></div><div class="channel-label">KANALLAR</div><div class="channel active"><span class="hash">#</span> genel <span class="channel-pulse"></span></div><div class="sidebar-bottom"><div class="user-avatar" id="profileAvatar">U</div><div class="profile-info"><strong id="profileName">Kullanıcı</strong><small><span class="live-dot"></span> Çevrimiçi</small></div></div></aside>
-      <div class="chat-main">
-        <header class="chat-header"><div class="header-channel"><span class="hash">#</span><div><strong>genel</strong><small>Herkesle sohbet et</small></div></div>
-          <div class="header-actions"><div class="header-online"><span class="live-dot"></span><strong id="onlineCount">1</strong><span>çevrimiçi</span></div><button id="createVoiceRoom" class="room-action" type="button">＋ Oda kur</button><button id="joinVoiceRoom" class="room-action secondary" type="button">↗ Odaya katıl</button></div>
-        </header>
-        <div class="chat-content"><div class="welcome-card"><div class="welcome-icon">✦</div><div><strong>Genel kanala hoş geldin!</strong><p>İlk mesajı sen gönder, sohbet başlasın.</p></div></div><div id="messages" class="messages" aria-live="polite"></div></div>
-        <form id="messageForm" class="message-form"><button id="gifButton" class="gif-button" type="button">GIF</button><input id="messageInput" maxlength="1000" autocomplete="off" placeholder="#genel kanalına mesaj gönder" aria-label="Mesaj"><button class="send-button" type="submit" aria-label="Gönder">↑</button></form><div class="message-hint">Enter ile gönder <span>·</span> GIF ile tepkini göster</div>
+
+  <section id="joinScreen" class="join-screen">
+    <form id="joinForm" class="join-card">
+      <h1>Chatbox</h1>
+      <p>Gerçek zamanlı sohbet</p>
+      <input id="nameInput" maxlength="24" placeholder="Kullanıcı adın" required>
+      <button type="submit">Sohbete gir</button>
+    </form>
+  </section>
+
+  <main id="chatScreen" class="chat-screen hidden">
+    <header class="topbar">
+      <div class="brand">Chatbox</div>
+
+      <div class="top-actions">
+        <button id="createVoiceBtn" title="Sesli oda oluştur">🎙️ Oda oluştur</button>
+        <button id="joinVoiceBtn" title="Sesli odaya katıl">🔊 Odaya katıl</button>
       </div>
-      <aside class="members-panel"><div class="members-title">ÇEVRİMİÇİ — <span id="memberCount">1</span></div><div id="userList" class="user-list"></div></aside>
-    </section>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h3>Çevrimiçi <span id="onlineCount">0</span></h3>
+        <ul id="userList"></ul>
+      </aside>
+
+      <section class="chat-area">
+        <div id="messages" class="messages"></div>
+
+        <form id="messageForm" class="message-form">
+          <button type="button" id="gifButton">GIF</button>
+          <input id="messageInput" placeholder="Mesaj yaz..." autocomplete="off">
+          <button type="submit">Gönder</button>
+        </form>
+      </section>
+    </div>
   </main>
-  <div id="gifModal" class="gif-modal hidden" role="dialog" aria-modal="true"><div class="gif-dialog"><header class="gif-header"><div><strong id="gifTitle">GIF seç</strong><small>Bir GIF bul ve sohbete gönder</small></div><button id="closeGif" class="close-gif" type="button">×</button></header><form id="gifSearchForm" class="gif-search"><span>⌕</span><input id="gifQuery" maxlength="80" placeholder="GIF ara..." autocomplete="off"><button type="submit">Ara</button></form><div id="gifResults" class="gif-results"><div class="gif-message">Trend GIF'ler yükleniyor...</div></div><div class="gif-attribution">Powered by <strong>GIPHY</strong></div></div></div>
-  <div id="voiceRoomModal" class="voice-modal hidden" role="dialog" aria-modal="true" aria-hidden="true"><div class="voice-dialog"><header><div><strong>Odaya katıl</strong><small>Oda kuran kişinin Chatbox kullanıcı adını yaz</small></div><button id="closeVoiceRoomModal" type="button" aria-label="Kapat">×</button></header><form id="joinVoiceRoomForm"><label for="roomHostName">Oda kuran kişinin adı</label><input id="roomHostName" maxlength="24" placeholder="Örn. Ahmet" autocomplete="off" required><button class="primary-button" type="submit">Sesli odaya katıl</button></form><p id="voiceRoomStatus">Katılmak istediğin kişinin kullanıcı adını yaz.</p></div></div>
-  <section id="voiceBar" class="voice-bar hidden" aria-label="Sesli oda"><div class="voice-room-info"><strong id="voiceRoomTitle">Sesli oda</strong><div id="voiceMembers" class="voice-members"></div></div><div class="voice-controls"><button id="voiceMicButton" type="button">🎙 Mikrofon açık</button><button id="voiceChatButton" type="button">▤ Chat</button><button id="leaveVoiceRoom" type="button" class="leave-voice">Çık</button></div></section>
-  <aside id="voiceChatPanel" class="voice-chat-panel hidden"><header><strong>Oda sohbeti</strong><button type="button" id="voiceChatButtonClose" aria-label="Sohbeti kapat" onclick="document.getElementById('voiceChatPanel').classList.add('hidden')">×</button></header><div id="voiceChatMessages"></div><form id="voiceChatForm"><input id="voiceChatInput" maxlength="500" placeholder="Odaya mesaj yaz..." autocomplete="off"><button type="submit">Gönder</button></form></aside>
-  <div id="voiceAudioBin" class="voice-audio-bin"></div><div id="toast" class="toast" role="status"></div>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js"></script><script src="/voice.js"></script>
-</body></html>
+
+  <!-- GIF penceresi -->
+  <div id="gifModal" class="modal hidden">
+    <div class="modal-card">
+      <button id="closeGif" class="close-btn">✕</button>
+      <h2>GIF ara</h2>
+
+      <form id="gifSearchForm">
+        <input id="gifQuery" placeholder="GIF ara..." autocomplete="off">
+        <button type="submit">Ara</button>
+      </form>
+
+      <div id="gifResults" class="gif-results"></div>
+    </div>
+  </div>
+
+  <!-- Sesli oda penceresi -->
+  <section id="voicePanel" class="voice-panel hidden">
+    <header class="voice-header">
+      <div>
+        <strong id="voiceRoomTitle">Sesli oda</strong>
+        <small id="voiceStatus">Bağlanıyor...</small>
+      </div>
+
+      <div class="voice-header-buttons">
+        <button id="voiceTextToggle" title="Oda sohbeti">💬</button>
+        <button id="voiceCloseBtn" title="Odadan ayrıl">✕</button>
+      </div>
+    </header>
+
+    <div id="voicePeers" class="voice-peers"></div>
+
+    <div class="voice-controls">
+      <button id="voiceMicBtn">🎙️ Mikrofon açık</button>
+      <button id="voiceLeaveBtn" class="leave-button">Odadan ayrıl</button>
+    </div>
+
+    <div id="voiceTextPanel" class="voice-text-panel hidden">
+      <div id="voiceMessages" class="voice-messages"></div>
+
+      <form id="voiceMessageForm" class="voice-message-form">
+        <input id="voiceMessageInput" placeholder="Odaya mesaj yaz..." maxlength="500">
+        <button type="submit">Gönder</button>
+      </form>
+    </div>
+  </section>
+
+  <audio id="joinSound" src="/sounds/join.m4a" preload="auto"></audio>
+  <audio id="leaveSound" src="/sounds/leave.m4a" preload="auto"></audio>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+  <script src="/voice.js"></script>
+</body>
+</html>
