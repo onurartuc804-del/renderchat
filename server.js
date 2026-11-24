@@ -7,164 +7,149 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-const GIPHY_API_KEY = process.env.GIPHY_API_KEY;
 
 app.use(express.static("public"));
 
 app.get("/api/gifs", async (req, res) => {
-  if (!GIPHY_API_KEY) {
+  const key = process.env.GIPHY_API_KEY;
+  const query = String(req.query.q || "").trim().slice(0, 80);
+
+  if (!key) {
     return res.status(503).json({
-      error: "GIPHY API anahtarı ayarlanmamış."
+      error: "GIPHY_API_KEY is not set on the server."
     });
   }
 
-  const q = String(req.query.q || "").trim().slice(0, 80);
-
-  const endpoint = q
-    ? "https://api.giphy.com/v1/gifs/search"
-    : "https://api.giphy.com/v1/gifs/trending";
-
-  const url = new URL(endpoint);
-
-  url.searchParams.set("api_key", GIPHY_API_KEY);
-  url.searchParams.set("limit", "18");
-  url.searchParams.set("rating", "g");
-
-  if (q) url.searchParams.set("q", q);
-
   try {
-    const response = await fetch(url);
-    const data = await response.json();
+    const endpoint = query
+      ? `https://api.giphy.com/v1/gifs/search?api_key=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}&limit=24&rating=pg`
+      : `https://api.giphy.com/v1/gifs/trending?api_key=${encodeURIComponent(key)}&limit=24&rating=pg`;
+
+    const response = await fetch(endpoint);
 
     if (!response.ok) {
       return res.status(502).json({
-        error: "GIF araması başarısız oldu."
+        error: "GIF provider request failed."
       });
     }
+
+    const data = await response.json();
 
     const gifs = (data.data || []).map(gif => ({
       id: gif.id,
       title: gif.title || "GIF",
-      url: gif.images?.fixed_width?.url,
-      preview: gif.images?.fixed_width_small?.url
-    })).filter(gif => gif.url && gif.preview);
+      preview: gif.images?.fixed_width_small?.url,
+      url: gif.images?.fixed_width?.url
+    })).filter(gif => gif.preview && gif.url);
 
     res.json({ gifs });
-  } catch {
+  } catch (error) {
     res.status(500).json({
-      error: "GIF'ler yüklenemedi."
+      error: "GIF search is unavailable."
     });
   }
 });
 
 const users = new Map();
-const messages = [];
+const history = [];
+const MAX_HISTORY = 60;
 
-const MAX_MESSAGES = 50;
-
-function cleanName(name) {
-  return String(name || "Guest")
+function cleanText(value, max = 500) {
+  return String(value || "")
+    .replace(/[<>]/g, "")
     .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 20) || "Guest";
-}
-
-function sendUsers() {
-  io.emit("users", [...users.values()]);
+    .slice(0, max);
 }
 
 io.on("connection", socket => {
-
-  socket.on("join", name => {
+  socket.on("join", rawName => {
     if (users.has(socket.id)) return;
 
-    name = cleanName(name);
+    const name = cleanText(rawName, 24) || "Guest";
     users.set(socket.id, name);
 
-    socket.emit("history", messages);
+    socket.emit("chat:history", history);
 
-    io.emit("system", `${name} sohbete katıldı`);
+    io.emit("users:update",
+      Array.from(users.entries()).map(([id, username]) => ({
+        id,
+        username
+      }))
+    );
 
-    sendUsers();
+    io.emit("chat:system", {
+      text: `${name} sohbete katıldı.`,
+      time: Date.now()
+    });
   });
 
-  socket.on("chat-message", data => {
-    if (!users.has(socket.id)) return;
-    if (!data || typeof data !== "object") return;
+  socket.on("chat:message", raw => {
+    const username = users.get(socket.id);
 
-    const name = users.get(socket.id);
+    if (!username || !raw || typeof raw !== "object") return;
 
-    if (data.type === "gif") {
-      let url;
+    const type = raw.type === "gif" ? "gif" : "text";
+    let message;
 
-      try {
-        url = new URL(String(data.url || ""));
-      } catch {
+    if (type === "gif") {
+      const url = String(raw.url || "");
+
+      if (!/^https:\/\/(media|i)\.giphy\.com\//i.test(url)) {
         return;
       }
 
-      if (
-        url.protocol !== "https:" ||
-        !(url.hostname === "giphy.com" ||
-          url.hostname.endsWith(".giphy.com"))
-      ) {
-        return;
-      }
-
-      const message = {
-        id: Date.now() + "-" + socket.id,
-        name,
-        type: "gif",
-        url: url.href,
+      message = {
+        id: `${socket.id}-${Date.now()}`,
+        userId: socket.id,
+        username,
+        type,
+        url,
+        title: cleanText(raw.title, 100),
         time: Date.now()
       };
+    } else {
+      const text = cleanText(raw.text, 1000);
+      if (!text) return;
 
-      messages.push(message);
-
-      if (messages.length > MAX_MESSAGES) {
-        messages.shift();
-      }
-
-      io.emit("chat-message", message);
-      return;
+      message = {
+        id: `${socket.id}-${Date.now()}`,
+        userId: socket.id,
+        username,
+        type,
+        text,
+        time: Date.now()
+      };
     }
 
-    const text = String(data.text || "")
-      .trim()
-      .slice(0, 500);
+    history.push(message);
 
-    if (!text) return;
-
-    const message = {
-      id: Date.now() + "-" + socket.id,
-      name,
-      type: "text",
-      text,
-      time: Date.now()
-    };
-
-    messages.push(message);
-
-    if (messages.length > MAX_MESSAGES) {
-      messages.shift();
+    if (history.length > MAX_HISTORY) {
+      history.shift();
     }
 
-    io.emit("chat-message", message);
+    io.emit("chat:message", message);
   });
 
   socket.on("disconnect", () => {
     const name = users.get(socket.id);
+    if (!name) return;
 
-    if (name) {
-      users.delete(socket.id);
+    users.delete(socket.id);
 
-      io.emit("system", `${name} sohbetten ayrıldı`);
+    io.emit("users:update",
+      Array.from(users.entries()).map(([id, username]) => ({
+        id,
+        username
+      }))
+    );
 
-      sendUsers();
-    }
+    io.emit("chat:system", {
+      text: `${name} sohbetten ayrıldı.`,
+      time: Date.now()
+    });
   });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("Chatbox çalışıyor: " + PORT);
+server.listen(PORT, () => {
+  console.log(`Chatbox listening on ${PORT}`);
 });
