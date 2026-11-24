@@ -1,10 +1,17 @@
+
+"use strict";
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 const GIPHY_API_KEY = process.env.GIPHY_API_KEY || "";
@@ -17,31 +24,52 @@ const voiceRooms = new Map();
 
 const MAX_HISTORY = 100;
 
+// ------------------------------
+// YARDIMCI FONKSİYONLAR
+// ------------------------------
+
 function cleanName(value) {
-  return String(value || "").trim().slice(0, 24);
+  return String(value || "")
+    .trim()
+    .replace(/[<>]/g, "")
+    .slice(0, 24);
+}
+
+function cleanText(value, max = 1000) {
+  return String(value || "")
+    .trim()
+    .slice(0, max);
 }
 
 function roomKey(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function sendUsers() {
   io.emit("users:update", [...users.values()]);
 }
 
+// ------------------------------
+// SESLİ ODADAN AYRILMA
+// ------------------------------
+
 function leaveVoiceRoom(socket) {
   const key = socket.data.voiceRoom;
+
   if (!key) return;
 
   socket.data.voiceRoom = null;
 
   const room = voiceRooms.get(key);
+
   if (!room) return;
 
   room.members.delete(socket.id);
   socket.leave(key);
 
-  // Oda sahibi çıkarsa oda kapanır
+  // Oda sahibi ayrılırsa oda kapanır
   if (room.hostId === socket.id) {
     for (const id of room.members) {
       const member = io.sockets.sockets.get(id);
@@ -54,75 +82,135 @@ function leaveVoiceRoom(socket) {
     }
 
     voiceRooms.delete(key);
+
     return;
   }
 
+  // Diğer kullanıcılara ayrılma bildir
   socket.to(key).emit("voice:peer-left", {
     id: socket.id
   });
 }
 
-// GIPHY GIF arama
+// ------------------------------
+// GIF ARAMA API
+// 50'ŞER SONUÇ, 10.000'E KADAR
+// ------------------------------
+
 app.get("/api/gifs", async (req, res) => {
   try {
     if (!GIPHY_API_KEY) {
       return res.status(500).json({
-        error: "Render ayarlarında GIPHY_API_KEY eksik."
+        error: "GIPHY_API_KEY ayarlanmamış."
       });
     }
 
-    const query = String(req.query.q || "funny").slice(0, 100);
+    const query = cleanText(req.query.q || "funny", 100);
 
-    const url = new URL("https://api.giphy.com/v1/gifs/search");
+    const limit = Math.min(
+      50,
+      Math.max(1, Number(req.query.limit) || 50)
+    );
+
+    const offset = Math.min(
+      9999,
+      Math.max(0, Number(req.query.offset) || 0)
+    );
+
+    const url = new URL(
+      "https://api.giphy.com/v1/gifs/search"
+    );
+
     url.searchParams.set("api_key", GIPHY_API_KEY);
     url.searchParams.set("q", query);
-    url.searchParams.set("limit", "24");
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("offset", String(offset));
     url.searchParams.set("rating", "pg");
+    url.searchParams.set("lang", "tr");
 
     const response = await fetch(url);
     const result = await response.json();
 
     if (!response.ok) {
-      return res.status(500).json({
-        error: "GIF araması başarısız."
+      return res.status(response.status).json({
+        error: result.message || "GIF araması başarısız."
       });
     }
 
-    const gifs = (result.data || []).map(gif => ({
-      id: gif.id,
-      title: gif.title,
-      url: gif.images?.fixed_height?.url,
-      preview: gif.images?.fixed_height_small?.url
-    })).filter(gif => gif.url);
+    const gifs = (result.data || [])
+      .map(gif => ({
+        id: gif.id,
+        title: gif.title || "",
+        url: gif.images?.fixed_height?.url || "",
+        preview:
+          gif.images?.fixed_height_small?.url ||
+          gif.images?.fixed_height?.url ||
+          ""
+      }))
+      .filter(gif => gif.url);
 
-    res.json(gifs);
+    const apiTotal =
+      Number(result.pagination?.total_count) || 0;
+
+    const total = Math.min(10000, apiTotal);
+    const nextOffset = offset + gifs.length;
+
+    res.json({
+      gifs,
+      total,
+      nextOffset,
+      hasMore:
+        gifs.length > 0 &&
+        nextOffset < total &&
+        nextOffset < 10000
+    });
+
   } catch (error) {
-    console.error("GIF error:", error);
-    res.status(500).json({ error: "GIF arama hatası." });
+    console.error("GIF hatası:", error);
+
+    res.status(500).json({
+      error: "GIF yüklenirken hata oluştu."
+    });
   }
 });
+
+// ------------------------------
+// SOCKET.IO
+// ------------------------------
 
 io.on("connection", socket => {
   socket.data.voiceRoom = null;
 
-  // Genel sohbet giriş
+  // ----------------------------
+  // KULLANICI GİRİŞİ
+  // ----------------------------
+
   socket.on("user:join", name => {
     const username = cleanName(name);
+
     if (!username) return;
 
     users.set(socket.id, username);
     socket.data.username = username;
 
     socket.emit("chat:history", chatHistory);
+
     sendUsers();
+
+    console.log(username + " bağlandı.");
   });
 
-  // Genel sohbet mesajı
+  // ----------------------------
+  // GENEL SOHBET MESAJI
+  // ----------------------------
+
   socket.on("chat:message", message => {
     const username = users.get(socket.id);
+
     if (!username) return;
 
-    const text = String(message || "").trim().slice(0, 1000);
+    const text = cleanText(message, 1000);
+
     if (!text) return;
 
     const item = {
@@ -132,6 +220,7 @@ io.on("connection", socket => {
     };
 
     chatHistory.push(item);
+
     if (chatHistory.length > MAX_HISTORY) {
       chatHistory.shift();
     }
@@ -139,14 +228,17 @@ io.on("connection", socket => {
     io.emit("chat:message", item);
   });
 
-  // Sesli oda oluştur
+  // ----------------------------
+  // SESLİ ODA OLUŞTUR
+  // ----------------------------
+
   socket.on("voice:create", callback => {
     const username = users.get(socket.id);
 
     if (!username) {
       return callback?.({
         ok: false,
-        error: "Önce Chatbox'a giriş yap."
+        error: "Önce giriş yapmalısın."
       });
     }
 
@@ -157,7 +249,7 @@ io.on("connection", socket => {
     if (voiceRooms.has(key)) {
       return callback?.({
         ok: false,
-        error: "Bu kullanıcı adına ait oda zaten açık."
+        error: "Bu isimde bir sesli oda zaten var."
       });
     }
 
@@ -175,16 +267,21 @@ io.on("connection", socket => {
       roomName: username,
       peers: []
     });
+
+    console.log(username + " sesli oda açtı.");
   });
 
-  // Sesli odaya kullanıcı adıyla katıl
+  // ----------------------------
+  // SESLİ ODAYA KATIL
+  // ----------------------------
+
   socket.on("voice:join", (hostName, callback) => {
     const username = users.get(socket.id);
 
     if (!username) {
       return callback?.({
         ok: false,
-        error: "Önce Chatbox'a giriş yap."
+        error: "Önce giriş yapmalısın."
       });
     }
 
@@ -194,7 +291,7 @@ io.on("connection", socket => {
     if (!room) {
       return callback?.({
         ok: false,
-        error: "Bu kullanıcı adına ait açık oda bulunamadı."
+        error: "Sesli oda bulunamadı."
       });
     }
 
@@ -213,6 +310,7 @@ io.on("connection", socket => {
     }));
 
     room.members.add(socket.id);
+
     socket.join(key);
     socket.data.voiceRoom = key;
 
@@ -226,16 +324,21 @@ io.on("connection", socket => {
       roomName: room.hostName,
       peers
     });
+
+    console.log(username + " " + room.hostName + " odasına katıldı.");
   });
 
-  // WebRTC sinyallerini odadaki hedef kullanıcıya ilet
+  // ----------------------------
+  // WEBRTC SİNYALLEŞME
+  // ----------------------------
+
   socket.on("voice:signal", payload => {
     const key = socket.data.voiceRoom;
     const room = voiceRooms.get(key);
 
-    if (!room || !payload?.to || !room.members.has(payload.to)) {
-      return;
-    }
+    if (!room || !payload || !payload.to) return;
+
+    if (!room.members.has(payload.to)) return;
 
     io.to(payload.to).emit("voice:signal", {
       from: socket.id,
@@ -243,7 +346,10 @@ io.on("connection", socket => {
     });
   });
 
-  // Sesli oda yazılı sohbeti
+  // ----------------------------
+  // SESLİ ODA MESAJLARI
+  // ----------------------------
+
   socket.on("voice:message", message => {
     const key = socket.data.voiceRoom;
     const room = voiceRooms.get(key);
@@ -251,7 +357,8 @@ io.on("connection", socket => {
 
     if (!room || !username) return;
 
-    const text = String(message || "").trim().slice(0, 500);
+    const text = cleanText(message, 500);
+
     if (!text) return;
 
     io.to(key).emit("voice:message", {
@@ -261,17 +368,43 @@ io.on("connection", socket => {
     });
   });
 
+  // ----------------------------
+  // SESLİ ODADAN ÇIK
+  // ----------------------------
+
   socket.on("voice:leave", () => {
     leaveVoiceRoom(socket);
   });
 
+  // ----------------------------
+  // BAĞLANTI KESİLİRSE
+  // ----------------------------
+
   socket.on("disconnect", () => {
     leaveVoiceRoom(socket);
+
+    const username = users.get(socket.id);
+
     users.delete(socket.id);
+
     sendUsers();
+
+    if (username) {
+      console.log(username + " bağlantıyı kesti.");
+    }
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Chatbox çalışıyor: port ${PORT}`);
+// ------------------------------
+// SUNUCUYU BAŞLAT
+// ------------------------------
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("================================");
+  console.log("       CHATBOX AKTİF");
+  console.log(" Port: " + PORT);
+  console.log(" GIF: 10.000'e kadar");
+  console.log(" Sesli sohbet: Aktif");
+  console.log("================================");
 });
+
