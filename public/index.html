@@ -4,11 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#111827">
-
   <title>Chatbox</title>
-
-  <link rel="stylesheet" href="style.css">
 
   <style>
     * {
@@ -17,688 +13,220 @@
 
     body {
       margin: 0;
-      background: #0b1120;
-      color: #f8fafc;
       font-family: Arial, sans-serif;
+      background: #111827;
+      color: white;
     }
 
-    button, input {
-      font: inherit;
-    }
-
-    button {
-      cursor: pointer;
-    }
-
-    .screen {
-      min-height: 100vh;
-    }
-
-    #joinScreen {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .container {
+      width: 100%;
+      max-width: 900px;
+      margin: auto;
       padding: 20px;
     }
 
-    .login-card {
-      width: 100%;
-      max-width: 390px;
-      padding: 30px;
-      border-radius: 20px;
-      background: #172033;
-      text-align: center;
-      box-shadow: 0 15px 45px #0005;
+    .panel {
+      background: #1f2937;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
     }
 
-    .logo {
-      font-size: 38px;
-      font-weight: 900;
-      color: #818cf8;
-      margin-bottom: 10px;
+    h1, h2 {
+      margin-top: 0;
     }
 
-    .login-card p {
-      color: #94a3b8;
+    input, button {
+      padding: 12px;
+      border-radius: 8px;
+      border: none;
+      margin: 5px 0;
+      font-size: 15px;
     }
 
     input {
       width: 100%;
-      padding: 14px;
-      border: 1px solid #334155;
-      background: #0f172a;
+      background: #374151;
       color: white;
-      border-radius: 10px;
-      outline: none;
     }
 
-    input:focus {
-      border-color: #818cf8;
-    }
-
-    .primary-button {
-      background: #6366f1;
+    button {
+      background: #2563eb;
       color: white;
-      border: 0;
-      border-radius: 10px;
-      padding: 13px 18px;
-      font-weight: bold;
+      cursor: pointer;
     }
 
-    .primary-button:hover {
-      background: #4f46e5;
+    button:hover {
+      background: #1d4ed8;
     }
 
-    #joinButton {
-      width: 100%;
-      margin-top: 12px;
+    .danger {
+      background: #dc2626;
     }
 
-    #chatScreen {
-      display: none;
-      flex-direction: column;
-      height: 100vh;
-      min-height: 500px;
-    }
-
-    .topbar {
-      height: 65px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 18px;
-      background: #172033;
-      border-bottom: 1px solid #263449;
-    }
-
-    .topbar-logo {
-      font-size: 23px;
-      font-weight: bold;
-      color: #818cf8;
-    }
-
-    .online-status {
-      color: #86efac;
-      font-size: 13px;
-    }
-
-    .chat-layout {
-      display: flex;
-      flex: 1;
-      min-height: 0;
-    }
-
-    .sidebar {
-      width: 230px;
-      flex-shrink: 0;
-      padding: 18px;
-      background: #111827;
-      border-right: 1px solid #263449;
-      overflow-y: auto;
-    }
-
-    .sidebar h3 {
-      font-size: 14px;
-      color: #94a3b8;
-    }
-
-    #onlineUsers {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .online-user {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      font-size: 14px;
-    }
-
-    .online-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: #22c55e;
-    }
-
-    .chat-main {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .chat-heading {
-      padding: 16px 20px;
-      border-bottom: 1px solid #263449;
-      font-weight: bold;
+    .hidden {
+      display: none !important;
     }
 
     #messages {
-      flex: 1;
-      min-height: 0;
+      height: 250px;
       overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 13px;
+      background: #111827;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 10px 0;
     }
 
     .message {
-      max-width: 85%;
-      width: fit-content;
-      padding: 12px;
-      background: #1e293b;
-      border-radius: 12px;
+      padding: 8px;
+      margin-bottom: 6px;
+      background: #374151;
+      border-radius: 8px;
       overflow-wrap: anywhere;
     }
-
-    .own-message {
-      align-self: flex-end;
-      background: #3730a3;
-    }
-
-    .message-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 7px;
-      font-size: 13px;
-    }
-
-    .message-header small {
-      color: #a5b4fc;
-    }
-
-    .message-content {
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-
-    .chat-gif {
-      display: block;
-      max-width: 260px;
-      width: 100%;
-      height: auto;
-      border-radius: 10px;
-    }
-
-    .message-bar {
-      display: flex;
-      gap: 9px;
-      padding: 14px;
-      background: #172033;
-      border-top: 1px solid #263449;
-    }
-
-    .message-bar input {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .icon-button {
-      border: 0;
-      background: #334155;
-      color: white;
-      border-radius: 10px;
-      padding: 10px 14px;
-    }
-
-    .icon-button:hover {
-      background: #475569;
-    }
-
-    /* GIF MODALI */
-
-    #gifModal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: #000b;
-      align-items: center;
-      justify-content: center;
-      padding: 15px;
-    }
-
-    .gif-panel {
-      width: 100%;
-      max-width: 650px;
-      max-height: 90vh;
-      display: flex;
-      flex-direction: column;
-      background: #172033;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 16px;
-      overflow: hidden;
-    }
-
-    .gif-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 15px;
-      flex-shrink: 0;
-    }
-
-    .gif-header h2 {
-      margin: 0;
-      font-size: 24px;
-    }
-
-    .gif-search {
-      display: flex;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-
-    .gif-search input {
-      flex: 1;
-      min-width: 0;
-    }
-
-    /* GIF KUTULARI */
 
     #gifResults {
-      display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      gap: 10px !important;
-      align-items: stretch !important;
-      overflow-y: auto;
-      min-height: 120px;
-      padding: 12px 0;
-    }
-
-    #gifResults .gif-result {
-      display: block !important;
-      width: 100% !important;
-      height: 130px !important;
-      min-height: 130px !important;
-      max-height: 130px !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      overflow: hidden !important;
-      border: none !important;
-      border-radius: 10px !important;
-      background: #0f172a !important;
-      flex: none !important;
-    }
-
-    #gifResults .gif-result img {
-      display: block !important;
-      width: 100% !important;
-      height: 130px !important;
-      min-height: 130px !important;
-      max-height: 130px !important;
-      object-fit: cover !important;
-      border-radius: 10px !important;
-    }
-
-    #gifResults .gif-result:hover {
-      transform: scale(1.02);
-    }
-
-    #gifResults .gif-result:active {
-      transform: scale(0.98);
-    }
-
-    #loadMoreGifButton {
-      width: 100%;
-      margin-top: 8px;
-      flex-shrink: 0;
-    }
-
-    #loadMoreGifButton:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    /* SESLİ ODA */
-
-    #voiceScreen {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 500;
-      background: #0b1120;
-      padding: 20px;
-      overflow-y: auto;
-    }
-
-    .voice-panel {
-      width: 100%;
-      max-width: 650px;
-      margin: 30px auto;
-      padding: 22px;
-      background: #172033;
-      border-radius: 18px;
-    }
-
-    .voice-panel h2 {
-      color: #a5b4fc;
-    }
-
-    .voice-controls {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
-      margin: 20px 0;
-    }
-
-    .voice-controls button {
-      border: 0;
-      padding: 12px 16px;
-      border-radius: 10px;
-      color: white;
-      background: #334155;
-    }
-
-    #voiceRoomUsers {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin: 15px 0;
-    }
-
-    #voiceMessages {
-      height: 180px;
-      overflow-y: auto;
-      background: #0f172a;
-      border-radius: 10px;
-      padding: 12px;
-    }
-
-    .voice-message {
-      padding: 7px 0;
-      overflow-wrap: anywhere;
-    }
-
-    .voice-message-form {
-      display: flex;
-      gap: 8px;
       margin-top: 10px;
     }
 
-    .voice-message-form input {
-      flex: 1;
-      min-width: 0;
+    .gif-result {
+      background: #374151;
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
     }
 
-    #voiceCreateButton,
-    #voiceJoinButton {
-      background: #4f46e5;
+    .gif-result img {
+      width: 100%;
+      height: 130px;
+      object-fit: cover;
+      display: block;
     }
 
-    @media (max-width: 650px) {
-      .sidebar {
-        width: 115px;
-        padding: 10px;
-      }
-
-      .sidebar h3 {
-        font-size: 12px;
-      }
-
-      .message {
-        max-width: 95%;
-      }
-
-      .message-bar {
-        gap: 5px;
-        padding: 9px;
-      }
-
-      .message-bar button {
-        padding: 10px;
-      }
-
-      .topbar {
-        padding: 0 12px;
-      }
-
-      .gif-panel {
-        max-height: 88vh;
-        padding: 12px;
-      }
-
-      #gifResults .gif-result,
-      #gifResults .gif-result img {
-        height: 120px !important;
-        min-height: 120px !important;
-        max-height: 120px !important;
-      }
+    #voiceRoomUsers {
+      padding: 10px;
+      background: #111827;
+      border-radius: 8px;
+      margin: 10px 0;
     }
 
-    @media (max-width: 360px) {
-      #gifResults .gif-result,
-      #gifResults .gif-result img {
-        height: 100px !important;
-        min-height: 100px !important;
-        max-height: 100px !important;
-      }
+    #voiceMessages {
+      height: 150px;
+      overflow-y: auto;
+      background: #111827;
+      padding: 10px;
+      border-radius: 8px;
+      margin: 10px 0;
+    }
+
+    audio {
+      display: none;
     }
   </style>
 </head>
 
 <body>
+  <div class="container">
 
-  <!-- GİRİŞ -->
+    <!-- Giriş ekranı -->
+    <section id="loginScreen" class="panel">
+      <h1>Chatbox</h1>
+      <input id="usernameInput" placeholder="Kullanıcı adın">
+      <button id="joinButton">Sohbete Katıl</button>
+    </section>
 
-  <section id="joinScreen" class="screen">
-    <div class="login-card">
-      <div class="logo">CHATBOX</div>
+    <!-- Genel sohbet -->
+    <section id="chatScreen" class="panel hidden">
+      <h2>Genel Sohbet</h2>
 
-      <p>Gerçek zamanlı sohbet dünyasına katıl.</p>
+      <div id="messages"></div>
 
-      <input
-        id="usernameInput"
-        type="text"
-        maxlength="24"
-        placeholder="Kullanıcı adın"
-        autocomplete="username"
-      >
+      <input id="messageInput" placeholder="Mesajını yaz...">
+      <button id="sendButton">Gönder</button>
 
-      <button id="joinButton" class="primary-button">
-        Sohbete Katıl
-      </button>
-    </div>
-  </section>
-
-  <!-- SOHBET -->
-
-  <section id="chatScreen" class="screen">
-
-    <header class="topbar">
-      <div class="topbar-logo">CHATBOX</div>
-
-      <div class="online-status">
-        <span id="onlineCount">0</span> çevrimiçi
-      </div>
-    </header>
-
-    <div class="chat-layout">
-
-      <aside class="sidebar">
-        <h3>ÇEVRİMİÇİ KULLANICILAR</h3>
-
-        <div id="onlineUsers"></div>
-
-        <hr>
-
-        <h3>SESLİ ODALAR</h3>
-
-        <button id="voiceCreateButton" class="primary-button">
-          Oda Oluştur
-        </button>
-
-        <input
-          id="voiceRoomNameInput"
-          type="text"
-          placeholder="Oda sahibinin adı"
-          style="margin-top:10px;"
-        >
-
-        <button
-          id="voiceJoinButton"
-          class="primary-button"
-          style="width:100%;margin-top:8px;"
-        >
-          Odaya Katıl
-        </button>
-      </aside>
-
-      <main class="chat-main">
-
-        <div class="chat-heading">
-          Genel Sohbet
-        </div>
-
-        <div id="messages"></div>
-
-        <div class="message-bar">
-
-          <button id="gifButton" class="icon-button" title="GIF gönder">
-            GIF
-          </button>
-
-          <input
-            id="messageInput"
-            type="text"
-            maxlength="1000"
-            placeholder="Mesajını yaz..."
-            autocomplete="off"
-          >
-
-          <button id="sendButton" class="primary-button">
-            Gönder
-          </button>
-
-        </div>
-
-      </main>
-    </div>
-  </section>
-
-  <!-- GIF ARAMA -->
-
-  <div id="gifModal">
-
-    <div class="gif-panel">
-
-      <div class="gif-header">
-        <h2>GIF Ara</h2>
-
-        <button id="gifCloseButton" class="icon-button">
-          Kapat
-        </button>
-      </div>
-
-      <div class="gif-search">
-
-        <input
-          id="gifSearchInput"
-          type="text"
-          placeholder="GIF ara..."
-        >
-
-        <button id="gifSearchButton" class="primary-button">
-          Ara
-        </button>
-
-      </div>
+      <h3>GIF Ara</h3>
+      <input id="gifSearchInput" placeholder="GIF ara...">
+      <button id="gifSearchButton">Ara</button>
 
       <div id="gifResults"></div>
+    </section>
 
-      <button
-        id="loadMoreGifButton"
-        class="primary-button"
-        disabled
+    <!-- Sesli sohbet -->
+    <section id="voiceScreen" class="panel hidden">
+      <h2>Sesli Odalar</h2>
+
+      <input
+        id="voiceRoomNameInput"
+        placeholder="Oda adı veya oda sahibinin adı"
       >
-        Daha fazla GIF yükle
+
+      <button id="voiceCreateButton">
+        Oda Oluştur
       </button>
 
-    </div>
-  </div>
+      <button id="voiceJoinButton">
+        Odaya Katıl
+      </button>
 
-  <!-- SESLİ ODA -->
+      <h3 id="voiceRoomTitle">Henüz bir odada değilsin</h3>
 
-  <section id="voiceScreen">
+      <p id="voiceRoomStatus">Bağlantı bekleniyor</p>
 
-    <div class="voice-panel">
-
-      <h2 id="voiceRoomTitle">Sesli Oda</h2>
-
-      <p id="voiceRoomStatus">
-        Oda bağlantısı bekleniyor...
-      </p>
-
-      <h3>Odadaki kullanıcılar</h3>
-
-      <div id="voiceRoomUsers"></div>
-
-      <div class="voice-controls">
-
-        <button id="voiceMuteButton">
-          Mikrofonu Kapat
-        </button>
-
-        <button id="voiceChatToggleButton">
-          Sohbeti Aç/Kapat
-        </button>
-
-        <button id="voiceLeaveButton">
-          Odadan Ayrıl
-        </button>
-
+      <div id="voiceRoomUsers">
+        Odada kimse yok
       </div>
 
-      <div id="voiceChatPanel">
+      <button id="voiceMuteButton">
+        Mikrofonu Kapat
+      </button>
 
-        <h3>Oda Sohbeti</h3>
+      <button id="voiceChatToggleButton">
+        Oda Sohbeti
+      </button>
+
+      <button id="voiceLeaveButton" class="danger">
+        Odadan Çık
+      </button>
+
+      <div id="voiceChatPanel" class="hidden">
+        <h3>Oda Mesajları</h3>
 
         <div id="voiceMessages"></div>
 
-        <div class="voice-message-form">
+        <input
+          id="voiceMessageInput"
+          placeholder="Odaya mesaj yaz..."
+        >
 
-          <input
-            id="voiceMessageInput"
-            type="text"
-            placeholder="Odaya mesaj yaz..."
-            maxlength="500"
-          >
-
-          <button
-            id="voiceMessageSendButton"
-            class="primary-button"
-          >
-            Gönder
-          </button>
-
-        </div>
-
+        <button id="voiceMessageSendButton">
+          Gönder
+        </button>
       </div>
 
       <div id="voiceAudioContainer"></div>
+    </section>
 
-    </div>
-  </section>
+  </div>
 
-  <!-- SES DOSYALARI -->
+  <!-- Oda açılma ve kapanma sesleri -->
+  <audio
+    id="joinSound"
+    preload="auto"
+    src="/sounds/room-open.mp3"
+  ></audio>
 
-  <audio id="joinSound" preload="auto" src="sounds/join.m4a"></audio>
-  <audio id="leaveSound" preload="auto" src="sounds/leave.m4a"></audio>
+  <audio
+    id="leaveSound"
+    preload="auto"
+    src="/sounds/room-close.mp3"
+  ></audio>
 
-  <!-- SOCKET.IO -->
-
+  <!-- Scriptler -->
   <script src="/socket.io/socket.io.js"></script>
-
-  <!-- CHATBOX DOSYALARI -->
-
   <script src="app.js"></script>
   <script src="voice.js"></script>
-
 </body>
 </html>
