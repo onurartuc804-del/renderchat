@@ -1,69 +1,105 @@
+
 (() => {
+  "use strict";
+
+  // ==========================================
+  // CHATBOX VOICE CHAT
+  // WebRTC + Socket.IO
+  // ==========================================
+
+  const $ = id => document.getElementById(id);
+
   const socket = window.chatboxSocket;
+
   if (!socket) {
     console.error("Chatbox Socket.IO bağlantısı bulunamadı.");
     return;
   }
 
-  const $ = id => document.getElementById(id);
+  // ==========================================
+  // HTML ELEMENTLERİ
+  // ==========================================
 
-  const panel = $("voicePanel");
-  const createBtn = $("createVoiceBtn");
-  const joinBtn = $("joinVoiceBtn");
-  const closeBtn = $("voiceCloseBtn");
-  const leaveBtn = $("voiceLeaveBtn");
-  const micBtn = $("voiceMicBtn");
-  const textToggle = $("voiceTextToggle");
+  const voiceScreen = $("voiceScreen");
+
+  const createButton = $("voiceCreateButton");
+  const joinButton = $("voiceJoinButton");
+
+  const roomNameInput = $("voiceRoomNameInput");
 
   const roomTitle = $("voiceRoomTitle");
-  const status = $("voiceStatus");
-  const peersContainer = $("voicePeers");
+  const roomStatus = $("voiceRoomStatus");
 
-  const textPanel = $("voiceTextPanel");
+  const roomUsers = $("voiceRoomUsers");
+
+  const muteButton = $("voiceMuteButton");
+  const leaveButton = $("voiceLeaveButton");
+
+  const chatToggleButton = $("voiceChatToggleButton");
+  const chatPanel = $("voiceChatPanel");
+
   const voiceMessages = $("voiceMessages");
-  const voiceMessageForm = $("voiceMessageForm");
   const voiceMessageInput = $("voiceMessageInput");
+  const voiceMessageSendButton = $("voiceMessageSendButton");
 
-  const joinSound = $("joinSound");
-  const leaveSound = $("leaveSound");
+  const audioContainer = $("voiceAudioContainer");
+
+  // ==========================================
+  // DURUM
+  // ==========================================
 
   let localStream = null;
-  let currentRoom = "";
-  let micEnabled = true;
-  let isHost = false;
+  let currentRoom = null;
 
-  const peerConnections = new Map();
+  let muted = false;
+  let roomActive = false;
+  let connecting = false;
+
+  const peers = new Map();
   const peerNames = new Map();
   const pendingCandidates = new Map();
 
-  const rtcConfig = {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }
-    ]
-  };
+  // ==========================================
+  // SES ÇALMA
+  // ==========================================
 
-  function playSound(audio) {
-    if (!audio) return;
+  function playRoomSound(type) {
+    const sound = $(type === "open" ? "joinSound" : "leaveSound");
+
+    if (!sound) {
+      console.warn("Oda sesi HTML içinde bulunamadı.");
+      return;
+    }
 
     try {
-      audio.pause();
-      audio.currentTime = 0;
+      sound.pause();
+      sound.currentTime = 0;
+      sound.volume = 0.7;
 
-      const promise = audio.play();
-      if (promise) promise.catch(() => {});
+      const playPromise = sound.play();
+
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(error => {
+          console.warn("Oda sesi çalınamadı:", error);
+        });
+      }
     } catch (error) {
-      console.warn("Ses efekti oynatılamadı:", error);
+      console.warn("Ses hatası:", error);
     }
   }
 
-  async function getMicrophone() {
-    if (localStream) return localStream;
+  // ==========================================
+  // MİKROFON
+  // ==========================================
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("Mikrofon bu tarayıcıda desteklenmiyor.");
+  async function getMicrophone() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error(
+        "Mikrofon desteklenmiyor. HTTPS üzerinden açmalısın."
+      );
     }
 
-    localStream = await navigator.mediaDevices.getUserMedia({
+    return navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -71,74 +107,151 @@
       },
       video: false
     });
-
-    return localStream;
   }
 
-  function showRoom(name) {
-    currentRoom = name;
-    roomTitle.textContent = name + " sesli odası";
-    status.textContent = "Sesli odaya bağlandın";
-    panel.classList.remove("hidden");
-    peersContainer.innerHTML = "";
-    voiceMessages.innerHTML = "";
-    micEnabled = true;
-    micBtn.textContent = "🎙️ Mikrofon açık";
+  function stopMicrophone() {
+    if (!localStream) return;
+
+    localStream.getTracks().forEach(track => {
+      track.stop();
+    });
+
+    localStream = null;
   }
 
-  function addPeerCard(id, name) {
-    peerNames.set(id, name || "Kullanıcı");
+  // ==========================================
+  // EKRAN
+  // ==========================================
 
-    let card = document.getElementById("voice-peer-" + id);
-    if (card) return;
-
-    card = document.createElement("div");
-    card.className = "voice-peer";
-    card.id = "voice-peer-" + id;
-    card.textContent = name || "Kullanıcı";
-    peersContainer.appendChild(card);
+  function showVoiceScreen() {
+    if (voiceScreen) {
+      voiceScreen.style.display = "block";
+    }
   }
 
-  function removePeer(id) {
-    const pc = peerConnections.get(id);
+  function hideVoiceScreen() {
+    if (voiceScreen) {
+      voiceScreen.style.display = "none";
+    }
+  }
 
-    if (pc) {
-      pc.close();
-      peerConnections.delete(id);
+  // ==========================================
+  // ODA DURUMU
+  // ==========================================
+
+  function setStatus(text) {
+    if (roomStatus) {
+      roomStatus.textContent = text;
+    }
+  }
+
+  function setRoomTitle(name) {
+    if (roomTitle) {
+      roomTitle.textContent = "Sesli Oda: " + name;
+    }
+  }
+
+  // ==========================================
+  // KULLANICI LİSTESİ
+  // ==========================================
+
+  function renderRoomUsers() {
+    if (!roomUsers) return;
+
+    roomUsers.innerHTML = "";
+
+    const localName = window.chatboxUsername || "Sen";
+
+    const localUser = document.createElement("div");
+    localUser.className = "online-user";
+
+    const localDot = document.createElement("span");
+    localDot.className = "online-dot";
+
+    const localLabel = document.createElement("span");
+    localLabel.textContent = localName + " (Sen)";
+
+    localUser.append(localDot, localLabel);
+    roomUsers.appendChild(localUser);
+
+    peerNames.forEach((name, id) => {
+      const user = document.createElement("div");
+      user.className = "online-user";
+
+      const dot = document.createElement("span");
+      dot.className = "online-dot";
+
+      const label = document.createElement("span");
+      label.textContent = name || "Kullanıcı";
+
+      user.append(dot, label);
+      roomUsers.appendChild(user);
+    });
+  }
+
+  // ==========================================
+  // WEBRTC PEER OLUŞTUR
+  // ==========================================
+
+  function createPeer(peerId) {
+    if (peers.has(peerId)) {
+      return peers.get(peerId);
     }
 
-    pendingCandidates.delete(id);
-    peerNames.delete(id);
-
-    const card = document.getElementById("voice-peer-" + id);
-    if (card) card.remove();
-
-    const audio = document.getElementById("voice-audio-" + id);
-    if (audio) audio.remove();
-  }
-
-  function createPeerConnection(id, name) {
-    if (peerConnections.has(id)) {
-      return peerConnections.get(id);
+    if (!localStream) {
+      throw new Error("Mikrofon henüz açılmadı.");
     }
 
-    const pc = new RTCPeerConnection(rtcConfig);
-    peerConnections.set(id, pc);
-    pendingCandidates.set(id, []);
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302"
+        },
+        {
+          urls: "stun:stun1.l.google.com:19302"
+        }
+      ]
+    });
 
-    addPeerCard(id, name);
+    peers.set(peerId, pc);
+    pendingCandidates.set(peerId, []);
 
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
+    // Mikrofon sesini karşı tarafa gönder
+    localStream.getTracks().forEach(track => {
+      pc.addTrack(track, localStream);
+    });
+
+    // Karşı tarafın sesini al
+    pc.ontrack = event => {
+      const stream = event.streams && event.streams[0];
+
+      if (!stream || !audioContainer) return;
+
+      let audio = $("voice-audio-" + peerId);
+
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.id = "voice-audio-" + peerId;
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.controls = false;
+
+        audioContainer.appendChild(audio);
+      }
+
+      audio.srcObject = stream;
+
+      audio.play().catch(error => {
+        console.warn("Karşı tarafın sesi otomatik çalınamadı:", error);
       });
-    }
+    };
 
+    // ICE adaylarını karşı tarafa gönder
     pc.onicecandidate = event => {
       if (!event.candidate) return;
 
       socket.emit("voice:signal", {
-        to: id,
+        to: peerId,
         data: {
           type: "candidate",
           candidate: event.candidate
@@ -146,45 +259,36 @@
       });
     };
 
-    pc.ontrack = event => {
-      let audio = document.getElementById("voice-audio-" + id);
-
-      if (!audio) {
-        audio = document.createElement("audio");
-        audio.id = "voice-audio-" + id;
-        audio.autoplay = true;
-        audio.playsInline = true;
-        document.body.appendChild(audio);
-      }
-
-      audio.srcObject = event.streams[0];
-      audio.play().catch(() => {});
-    };
-
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") {
-        status.textContent = "Ses bağlantısı kuruldu";
+        setStatus("Sesli bağlantı kuruldu.");
       }
 
-      if (
-        pc.connectionState === "failed" ||
-        pc.connectionState === "closed"
-      ) {
-        removePeer(id);
+      if (pc.connectionState === "failed") {
+        setStatus("Ses bağlantısı başarısız. TURN sunucusu gerekebilir.");
+      }
+
+      if (pc.connectionState === "disconnected") {
+        setStatus("Ses bağlantısı kesildi.");
       }
     };
 
     return pc;
   }
 
-  async function sendOffer(id, name) {
-    const pc = createPeerConnection(id, name);
+  // ==========================================
+  // WEBRTC OFFER GÖNDER
+  // ==========================================
+
+  async function makeOffer(peerId) {
+    const pc = createPeer(peerId);
 
     const offer = await pc.createOffer();
+
     await pc.setLocalDescription(offer);
 
     socket.emit("voice:signal", {
-      to: id,
+      to: peerId,
       data: {
         type: "offer",
         sdp: pc.localDescription
@@ -192,228 +296,506 @@
     });
   }
 
-  async function createRoom() {
-    if (currentRoom) return;
+  // ==========================================
+  // ICE ADAYLARINI EKLE
+  // ==========================================
 
-    try {
-      await getMicrophone();
+  async function flushCandidates(peerId, pc) {
+    const list = pendingCandidates.get(peerId) || [];
 
-      socket.emit("voice:create", result => {
-        if (!result?.ok) {
-          alert(result?.error || "Oda oluşturulamadı.");
-          stopMicrophone();
-          return;
-        }
+    pendingCandidates.set(peerId, []);
 
-        isHost = true;
-        showRoom(result.roomName);
-        playSound(joinSound);
-      });
-    } catch (error) {
-      alert(error.message || "Mikrofon izni gerekli.");
+    for (const candidate of list) {
+      try {
+        await pc.addIceCandidate(
+          new RTCIceCandidate(candidate)
+        );
+      } catch (error) {
+        console.warn("ICE adayı eklenemedi:", error);
+      }
     }
   }
 
-  async function joinRoom() {
-    if (currentRoom) return;
+  // ==========================================
+  // WEBRTC SİNYALLERİNİ AL
+  // ==========================================
 
-    const hostName = prompt("Oda sahibinin kullanıcı adını yaz:");
-    if (!hostName || !hostName.trim()) return;
-
-    try {
-      await getMicrophone();
-
-      socket.emit("voice:join", hostName.trim(), async result => {
-        if (!result?.ok) {
-          alert(result?.error || "Odaya katılınamadı.");
-          stopMicrophone();
-          return;
-        }
-
-        isHost = false;
-        showRoom(result.roomName);
-        playSound(joinSound);
-
-        // Oda içindeki mevcut kişilerle bağlantı başlat
-        for (const peer of result.peers || []) {
-          await sendOffer(peer.id, peer.name);
-        }
-      });
-    } catch (error) {
-      alert(error.message || "Mikrofon izni gerekli.");
-    }
-  }
-
-  function stopMicrophone() {
-    if (!localStream) return;
-
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-
-  function closeRoomUI() {
-    panel.classList.add("hidden");
-    textPanel.classList.add("hidden");
-
-    for (const id of [...peerConnections.keys()]) {
-      removePeer(id);
-    }
-
-    peersContainer.innerHTML = "";
-    voiceMessages.innerHTML = "";
-
-    stopMicrophone();
-
-    currentRoom = "";
-    isHost = false;
-    micEnabled = true;
-  }
-
-  function leaveRoom() {
-    if (!currentRoom) return;
-
-    playSound(leaveSound);
-    socket.emit("voice:leave");
-    closeRoomUI();
-  }
-
-  createBtn.addEventListener("click", createRoom);
-  joinBtn.addEventListener("click", joinRoom);
-  closeBtn.addEventListener("click", leaveRoom);
-  leaveBtn.addEventListener("click", leaveRoom);
-
-  micBtn.addEventListener("click", () => {
-    if (!localStream) return;
-
-    micEnabled = !micEnabled;
-
-    localStream.getAudioTracks().forEach(track => {
-      track.enabled = micEnabled;
-    });
-
-    micBtn.textContent = micEnabled
-      ? "🎙️ Mikrofon açık"
-      : "🔇 Mikrofon kapalı";
-  });
-
-  textToggle.addEventListener("click", () => {
-    textPanel.classList.toggle("hidden");
-  });
-
-  voiceMessageForm.addEventListener("submit", event => {
-    event.preventDefault();
-
-    const text = voiceMessageInput.value.trim();
-    if (!text) return;
-
-    socket.emit("voice:message", text);
-    voiceMessageInput.value = "";
-  });
-
-  function addVoiceMessage(data) {
-    const row = document.createElement("div");
-    row.className = "voice-message";
-
-    const name = document.createElement("strong");
-    name.textContent = data.username + ": ";
-
-    const text = document.createElement("span");
-    text.textContent = data.text;
-
-    row.append(name, text);
-    voiceMessages.appendChild(row);
-    voiceMessages.scrollTop = voiceMessages.scrollHeight;
-  }
-
-  socket.on("voice:message", addVoiceMessage);
-
-  // Yeni kişi odaya katıldı
-  socket.on("voice:peer-joined", data => {
-    if (!currentRoom) return;
-
-    addPeerCard(data.id, data.name);
-    playSound(joinSound);
-  });
-
-  // Odadaki kişi ayrıldı
-  socket.on("voice:peer-left", data => {
-    if (!currentRoom) return;
-
-    removePeer(data.id);
-    playSound(leaveSound);
-  });
-
-  // Oda sahibi odayı kapattı
-  socket.on("voice:room-closed", () => {
-    if (!currentRoom) return;
-
-    playSound(leaveSound);
-    closeRoomUI();
-    alert("Oda sahibi sesli odayı kapattı.");
-  });
-
-  // WebRTC offer / answer / ICE
   socket.on("voice:signal", async payload => {
-    if (!currentRoom || !payload?.from || !payload?.data) return;
+    if (!roomActive || !payload || !payload.from) return;
 
-    const id = payload.from;
+    const peerId = payload.from;
     const data = payload.data;
 
-    try {
-      let pc = peerConnections.get(id);
+    if (!data || !data.type) return;
 
-      if (!pc) {
-        pc = createPeerConnection(id, peerNames.get(id) || "Kullanıcı");
+    try {
+      if (data.type === "candidate") {
+        const pc = peers.get(peerId);
+
+        if (!pc || !pc.remoteDescription) {
+          if (!pendingCandidates.has(peerId)) {
+            pendingCandidates.set(peerId, []);
+          }
+
+          pendingCandidates.get(peerId).push(data.candidate);
+          return;
+        }
+
+        await pc.addIceCandidate(
+          new RTCIceCandidate(data.candidate)
+        );
+
+        return;
       }
 
       if (data.type === "offer") {
+        const pc = createPeer(peerId);
+
         await pc.setRemoteDescription(
           new RTCSessionDescription(data.sdp)
         );
 
-        const candidates = pendingCandidates.get(id) || [];
-        for (const candidate of candidates) {
-          await pc.addIceCandidate(candidate);
-        }
-        pendingCandidates.set(id, []);
+        await flushCandidates(peerId, pc);
 
         const answer = await pc.createAnswer();
+
         await pc.setLocalDescription(answer);
 
         socket.emit("voice:signal", {
-          to: id,
+          to: peerId,
           data: {
             type: "answer",
             sdp: pc.localDescription
           }
         });
+
+        return;
       }
 
       if (data.type === "answer") {
+        const pc = peers.get(peerId);
+
+        if (!pc) return;
+
         await pc.setRemoteDescription(
           new RTCSessionDescription(data.sdp)
         );
 
-        const candidates = pendingCandidates.get(id) || [];
-        for (const candidate of candidates) {
-          await pc.addIceCandidate(candidate);
-        }
-        pendingCandidates.set(id, []);
+        await flushCandidates(peerId, pc);
       }
 
-      if (data.type === "candidate" && data.candidate) {
-        const candidate = new RTCIceCandidate(data.candidate);
-
-        if (pc.remoteDescription) {
-          await pc.addIceCandidate(candidate);
-        } else {
-          const queue = pendingCandidates.get(id) || [];
-          queue.push(candidate);
-          pendingCandidates.set(id, queue);
-        }
-      }
     } catch (error) {
-      console.error("WebRTC bağlantı hatası:", error);
+      console.error("WebRTC sinyal hatası:", error);
     }
   });
+
+  // ==========================================
+  // ODA OLUŞTUR
+  // ==========================================
+
+  async function createVoiceRoom() {
+    if (connecting || roomActive) return;
+
+    if (!socket.connected) {
+      alert("Sunucuya bağlı değilsin.");
+      return;
+    }
+
+    connecting = true;
+
+    if (createButton) {
+      createButton.disabled = true;
+    }
+
+    try {
+      setStatus("Mikrofon açılıyor...");
+
+      localStream = await getMicrophone();
+
+      socket.emit("voice:create", result => {
+        connecting = false;
+
+        if (createButton) {
+          createButton.disabled = false;
+        }
+
+        if (!result || !result.ok) {
+          stopMicrophone();
+
+          alert(result?.error || "Oda oluşturulamadı.");
+          setStatus("Oda oluşturulamadı.");
+          return;
+        }
+
+        currentRoom = result.roomName;
+        roomActive = true;
+
+        setRoomTitle(currentRoom);
+        setStatus("Oda açıldı. Mikrofonun aktif.");
+
+        showVoiceScreen();
+        renderRoomUsers();
+
+        // ODA AÇILMA SESİ
+        playRoomSound("open");
+      });
+
+    } catch (error) {
+      connecting = false;
+
+      if (createButton) {
+        createButton.disabled = false;
+      }
+
+      stopMicrophone();
+
+      console.error(error);
+
+      alert(
+        "Mikrofon açılamadı. Tarayıcıdan mikrofon izni vermelisin."
+      );
+
+      setStatus("Mikrofon açılamadı.");
+    }
+  }
+
+  // ==========================================
+  // SESLİ ODAYA KATIL
+  // ==========================================
+
+  async function joinVoiceRoom() {
+    if (connecting || roomActive) return;
+
+    if (!socket.connected) {
+      alert("Sunucuya bağlı değilsin.");
+      return;
+    }
+
+    const hostName = String(
+      roomNameInput?.value || ""
+    ).trim();
+
+    if (!hostName) {
+      alert("Oda sahibinin kullanıcı adını yaz.");
+      return;
+    }
+
+    connecting = true;
+
+    if (joinButton) {
+      joinButton.disabled = true;
+    }
+
+    try {
+      setStatus("Mikrofon açılıyor...");
+
+      localStream = await getMicrophone();
+
+      socket.emit("voice:join", hostName, async result => {
+        connecting = false;
+
+        if (joinButton) {
+          joinButton.disabled = false;
+        }
+
+        if (!result || !result.ok) {
+          stopMicrophone();
+
+          alert(result?.error || "Odaya katılınamadı.");
+          setStatus("Odaya katılınamadı.");
+          return;
+        }
+
+        currentRoom = result.roomName;
+        roomActive = true;
+
+        setRoomTitle(currentRoom);
+        setStatus("Odaya katıldın. Ses bağlantısı kuruluyor.");
+
+        showVoiceScreen();
+
+        // ODA KATILMA SESİ
+        playRoomSound("open");
+
+        const existingPeers = Array.isArray(result.peers)
+          ? result.peers
+          : [];
+
+        for (const peer of existingPeers) {
+          peerNames.set(peer.id, peer.name || "Kullanıcı");
+        }
+
+        renderRoomUsers();
+
+        // Yeni katılan kişi offer başlatır
+        for (const peer of existingPeers) {
+          try {
+            await makeOffer(peer.id);
+          } catch (error) {
+            console.error("Offer oluşturulamadı:", error);
+          }
+        }
+      });
+
+    } catch (error) {
+      connecting = false;
+
+      if (joinButton) {
+        joinButton.disabled = false;
+      }
+
+      stopMicrophone();
+
+      console.error(error);
+
+      alert("Mikrofon açılamadı. Mikrofon iznini kontrol et.");
+      setStatus("Mikrofon açılamadı.");
+    }
+  }
+
+  // ==========================================
+  // YENİ KULLANICI ODAYA KATILDI
+  // ==========================================
+
+  socket.on("voice:peer-joined", data => {
+    if (!roomActive || !data || !data.id) return;
+
+    peerNames.set(data.id, data.name || "Kullanıcı");
+
+    renderRoomUsers();
+
+    // Yeni kullanıcı kendi offer'ını gönderecek
+  });
+
+  // ==========================================
+  // KULLANICI ODADAN AYRILDI
+  // ==========================================
+
+  function removePeer(peerId) {
+    const pc = peers.get(peerId);
+
+    if (pc) {
+      pc.close();
+      peers.delete(peerId);
+    }
+
+    pendingCandidates.delete(peerId);
+    peerNames.delete(peerId);
+
+    const audio = $("voice-audio-" + peerId);
+
+    if (audio) {
+      audio.srcObject = null;
+      audio.remove();
+    }
+
+    renderRoomUsers();
+  }
+
+  socket.on("voice:peer-left", data => {
+    if (!data || !data.id) return;
+
+    removePeer(data.id);
+  });
+
+  // ==========================================
+  // SESLİ ODA MESAJLARI
+  // ==========================================
+
+  function addVoiceMessage(data) {
+    if (!voiceMessages || !data) return;
+
+    const item = document.createElement("div");
+    item.className = "voice-message";
+
+    const name = document.createElement("strong");
+    name.textContent = (data.username || "Kullanıcı") + ": ";
+
+    const text = document.createElement("span");
+    text.textContent = data.text || "";
+
+    item.append(name, text);
+
+    voiceMessages.appendChild(item);
+
+    voiceMessages.scrollTop = voiceMessages.scrollHeight;
+  }
+
+  socket.on("voice:message", data => {
+    if (!roomActive) return;
+
+    addVoiceMessage(data);
+  });
+
+  function sendVoiceMessage() {
+    const text = String(
+      voiceMessageInput?.value || ""
+    ).trim();
+
+    if (!text || !roomActive) return;
+
+    socket.emit("voice:message", text);
+
+    if (voiceMessageInput) {
+      voiceMessageInput.value = "";
+      voiceMessageInput.focus();
+    }
+  }
+
+  if (voiceMessageSendButton) {
+    voiceMessageSendButton.addEventListener(
+      "click",
+      sendVoiceMessage
+    );
+  }
+
+  if (voiceMessageInput) {
+    voiceMessageInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        sendVoiceMessage();
+      }
+    });
+  }
+
+  // ==========================================
+  // MİKROFONU KAPAT / AÇ
+  // ==========================================
+
+  if (muteButton) {
+    muteButton.addEventListener("click", () => {
+      if (!localStream) return;
+
+      muted = !muted;
+
+      localStream.getAudioTracks().forEach(track => {
+        track.enabled = !muted;
+      });
+
+      muteButton.textContent = muted
+        ? "Mikrofonu Aç"
+        : "Mikrofonu Kapat";
+
+      setStatus(
+        muted
+          ? "Mikrofon kapalı."
+          : "Mikrofon açık."
+      );
+    });
+  }
+
+  // ==========================================
+  // ODA SOHBETİNİ AÇ / KAPAT
+  // ==========================================
+
+  if (chatToggleButton) {
+    chatToggleButton.addEventListener("click", () => {
+      if (!chatPanel) return;
+
+      const isHidden = chatPanel.style.display === "none";
+
+      chatPanel.style.display = isHidden
+        ? "block"
+        : "none";
+    });
+  }
+
+  // ==========================================
+  // ODADAN AYRIL
+  // ==========================================
+
+  function closeVoiceRoom(playSoundOnClose = true) {
+    if (!roomActive && !localStream) return;
+
+    roomActive = false;
+    connecting = false;
+
+    socket.emit("voice:leave");
+
+    // Tüm WebRTC bağlantılarını kapat
+    peers.forEach(pc => {
+      pc.close();
+    });
+
+    peers.clear();
+    peerNames.clear();
+    pendingCandidates.clear();
+
+    // Ses elementlerini temizle
+    if (audioContainer) {
+      audioContainer.innerHTML = "";
+    }
+
+    // Mikrofonu kapat
+    stopMicrophone();
+
+    currentRoom = null;
+    muted = false;
+
+    if (muteButton) {
+      muteButton.textContent = "Mikrofonu Kapat";
+    }
+
+    if (voiceMessages) {
+      voiceMessages.innerHTML = "";
+    }
+
+    hideVoiceScreen();
+
+    setStatus("Odadan ayrıldın.");
+
+    // ODA KAPANMA / AYRILMA SESİ
+    if (playSoundOnClose) {
+      playRoomSound("close");
+    }
+  }
+
+  if (leaveButton) {
+    leaveButton.addEventListener("click", () => {
+      closeVoiceRoom(true);
+    });
+  }
+
+  // ==========================================
+  // ODA SAHİBİ ODAYI KAPATTI
+  // ==========================================
+
+  socket.on("voice:room-closed", () => {
+    closeVoiceRoom(true);
+
+    alert("Oda sahibi sesli odayı kapattı.");
+  });
+
+  // ==========================================
+  // BUTONLAR
+  // ==========================================
+
+  if (createButton) {
+    createButton.addEventListener("click", createVoiceRoom);
+  }
+
+  if (joinButton) {
+    joinButton.addEventListener("click", joinVoiceRoom);
+  }
+
+  // ==========================================
+  // BAĞLANTI KESİLİRSE
+  // ==========================================
+
+  socket.on("disconnect", () => {
+    if (roomActive || localStream) {
+      closeVoiceRoom(false);
+      setStatus("Sunucu bağlantısı kesildi.");
+    }
+  });
+
+  // ==========================================
+  // BAŞLANGIÇ
+  // ==========================================
+
+  if (chatPanel) {
+    chatPanel.style.display = "block";
+  }
+
+  console.log("Chatbox voice.js yüklendi.");
+
 })();
