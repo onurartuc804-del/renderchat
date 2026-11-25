@@ -5,52 +5,36 @@
   const $ = id => document.getElementById(id);
 
   // --------------------------------
-  // AYARLAR
+  // SOCKET.IO
   // --------------------------------
 
   const socket = io();
-
   window.chatboxSocket = socket;
 
   let username = localStorage.getItem("chatbox_username") || "";
   window.chatboxUsername = username;
 
-  let gifQuery = "";
-  let gifOffset = 0;
-  let gifTotal = 10000;
-  let gifLoading = false;
-  let gifHasMore = false;
-
-  const GIF_LIMIT = 50;
-  const GIF_MAX = 10000;
-
   // --------------------------------
   // HTML ELEMANLARI
   // --------------------------------
 
-  const joinScreen = $("joinScreen");
+  const loginScreen = $("loginScreen");
   const chatScreen = $("chatScreen");
+  const voiceScreen = $("voiceScreen");
 
   const usernameInput = $("usernameInput");
   const joinButton = $("joinButton");
 
+  const messages = $("messages");
   const messageInput = $("messageInput");
   const sendButton = $("sendButton");
-  const messages = $("messages");
 
-  const onlineUsers = $("onlineUsers");
-  const onlineCount = $("onlineCount");
-
-  const gifButton = $("gifButton");
-  const gifModal = $("gifModal");
   const gifSearchInput = $("gifSearchInput");
   const gifSearchButton = $("gifSearchButton");
   const gifResults = $("gifResults");
-  const loadMoreGifButton = $("loadMoreGifButton");
-  const gifCloseButton = $("gifCloseButton");
 
   // --------------------------------
-  // SESLER
+  // SES
   // --------------------------------
 
   function playSound(path) {
@@ -68,13 +52,15 @@
   // --------------------------------
 
   function showChat() {
-    if (joinScreen) joinScreen.style.display = "none";
-    if (chatScreen) chatScreen.style.display = "flex";
+    loginScreen?.classList.add("hidden");
+    chatScreen?.classList.remove("hidden");
+    voiceScreen?.classList.remove("hidden");
   }
 
   function showJoin() {
-    if (joinScreen) joinScreen.style.display = "flex";
-    if (chatScreen) chatScreen.style.display = "none";
+    loginScreen?.classList.remove("hidden");
+    chatScreen?.classList.add("hidden");
+    voiceScreen?.classList.add("hidden");
   }
 
   // --------------------------------
@@ -82,7 +68,7 @@
   // --------------------------------
 
   function joinChat() {
-    const name = String(usernameInput?.value || username).trim();
+    const name = String(usernameInput?.value || "").trim();
 
     if (!name) {
       alert("Bir kullanıcı adı yaz.");
@@ -99,30 +85,28 @@
 
     localStorage.setItem("chatbox_username", username);
 
-    if (!socket.connected) {
-      socket.connect();
-    }
+    showChat();
 
     if (socket.connected) {
       socket.emit("user:join", username);
+    } else {
+      socket.connect();
     }
-
-    showChat();
   }
 
-  if (joinButton) {
-    joinButton.addEventListener("click", joinChat);
-  }
+  joinButton?.addEventListener("click", joinChat);
 
-  if (usernameInput) {
-    usernameInput.value = username;
+  usernameInput.value = username;
 
-    usernameInput.addEventListener("keydown", event => {
-      if (event.key === "Enter") joinChat();
-    });
-  }
+  usernameInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      joinChat();
+    }
+  });
 
   socket.on("connect", () => {
+    console.log("Chatbox sunucuya bağlandı.");
+
     if (username) {
       socket.emit("user:join", username);
     }
@@ -140,7 +124,9 @@
     if (!messages || !data) return;
 
     const item = document.createElement("div");
-    item.className = own ? "message own-message" : "message";
+    item.className = own
+      ? "message own-message"
+      : "message";
 
     const header = document.createElement("div");
     header.className = "message-header";
@@ -149,6 +135,7 @@
     name.textContent = data.username || "Kullanıcı";
 
     const time = document.createElement("small");
+
     time.textContent = new Date(
       data.time || Date.now()
     ).toLocaleTimeString("tr-TR", {
@@ -156,15 +143,33 @@
       minute: "2-digit"
     });
 
-    const content = document.createElement("div");
-    content.className = "message-content";
-    content.textContent = data.text || "";
-
     header.append(name, time);
-    item.append(header, content);
+
+    const text = String(data.text || "");
+
+    // GIF URL kontrolü
+    if (/^https?:\/\/.+\.gif(\?.*)?$/i.test(text)) {
+      const image = document.createElement("img");
+
+      image.src = text;
+      image.alt = "GIF";
+      image.className = "chat-gif";
+      image.style.maxWidth = "100%";
+      image.style.maxHeight = "250px";
+      image.style.borderRadius = "8px";
+      image.loading = "lazy";
+
+      item.append(header, image);
+    } else {
+      const content = document.createElement("div");
+
+      content.className = "message-content";
+      content.textContent = text;
+
+      item.append(header, content);
+    }
 
     messages.appendChild(item);
-
     messages.scrollTop = messages.scrollHeight;
   }
 
@@ -177,7 +182,7 @@
 
     messages.innerHTML = "";
 
-    (history || []).forEach(message => {
+    (Array.isArray(history) ? history : []).forEach(message => {
       addMessage(
         message,
         message.username === username
@@ -190,6 +195,8 @@
   // --------------------------------
 
   socket.on("chat:message", data => {
+    if (!data) return;
+
     addMessage(data, data.username === username);
 
     if (data.username !== username) {
@@ -217,24 +224,23 @@
     messageInput.focus();
   }
 
-  if (sendButton) {
-    sendButton.addEventListener("click", sendMessage);
-  }
+  sendButton?.addEventListener("click", sendMessage);
 
-  if (messageInput) {
-    messageInput.addEventListener("keydown", event => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        sendMessage();
-      }
-    });
-  }
+  messageInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
 
   // --------------------------------
   // ÇEVRİMİÇİ KULLANICILAR
   // --------------------------------
 
   socket.on("users:update", users => {
+    const onlineUsers = $("onlineUsers");
+    const onlineCount = $("onlineCount");
+
     if (!onlineUsers) return;
 
     onlineUsers.innerHTML = "";
@@ -261,75 +267,17 @@
   });
 
   // --------------------------------
-  // GIF PENCERESİ
-  // --------------------------------
-
-  function openGifModal() {
-    if (!gifModal) return;
-
-    gifModal.style.display = "flex";
-
-    if (gifSearchInput) {
-      gifSearchInput.focus();
-    }
-  }
-
-  function closeGifModal() {
-    if (gifModal) {
-      gifModal.style.display = "none";
-    }
-  }
-
-  if (gifButton) {
-    gifButton.addEventListener("click", openGifModal);
-  }
-
-  if (gifCloseButton) {
-    gifCloseButton.addEventListener("click", closeGifModal);
-  }
-
-  // --------------------------------
-  // GIF SONUÇLARI
-  // --------------------------------
-
-  function addGif(gif) {
-    if (!gifResults || !gif.url) return;
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "gif-result";
-
-    const image = document.createElement("img");
-    image.src = gif.preview || gif.url;
-    image.alt = gif.title || "GIF";
-    image.loading = "lazy";
-
-    button.appendChild(image);
-
-    button.addEventListener("click", () => {
-      sendGif(gif.url);
-      closeGifModal();
-    });
-
-    gifResults.appendChild(button);
-  }
-
-  // --------------------------------
-  // GIF GÖNDER
-  // --------------------------------
-
-  function sendGif(url) {
-    if (!socket.connected) {
-      alert("Sunucuya bağlı değilsin.");
-      return;
-    }
-
-    socket.emit("chat:message", url);
-  }
-
-  // --------------------------------
   // GIF ARAMA
   // --------------------------------
+
+  let gifQuery = "";
+  let gifOffset = 0;
+  let gifTotal = 0;
+  let gifLoading = false;
+  let gifHasMore = false;
+
+  const GIF_LIMIT = 50;
+  const GIF_MAX = 10000;
 
   async function searchGifs(reset = true) {
     if (gifLoading) return;
@@ -342,7 +290,7 @@
       }
 
       gifOffset = 0;
-      gifTotal = GIF_MAX;
+      gifTotal = 0;
       gifHasMore = false;
 
       if (gifResults) {
@@ -350,14 +298,9 @@
       }
     }
 
-    if (gifOffset >= GIF_MAX) {
-      gifHasMore = false;
-      updateLoadMore();
-      return;
-    }
+    if (gifOffset >= GIF_MAX) return;
 
     gifLoading = true;
-    updateLoadMore();
 
     try {
       const params = new URLSearchParams({
@@ -373,14 +316,35 @@
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "GIF araması başarısız.");
+        throw new Error(
+          result.error || "GIF araması başarısız."
+        );
       }
 
       const list = Array.isArray(result.gifs)
         ? result.gifs
         : [];
 
-      list.forEach(addGif);
+      list.forEach(gif => {
+        if (!gifResults || !gif.url) return;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "gif-result";
+
+        const image = document.createElement("img");
+        image.src = gif.preview || gif.url;
+        image.alt = gif.title || "GIF";
+        image.loading = "lazy";
+
+        button.appendChild(image);
+
+        button.addEventListener("click", () => {
+          sendGif(gif.url);
+        });
+
+        gifResults.appendChild(button);
+      });
 
       gifTotal = Math.min(
         GIF_MAX,
@@ -395,12 +359,6 @@
         gifOffset < GIF_MAX &&
         gifOffset < gifTotal;
 
-      if (list.length === 0 && reset && gifResults) {
-        const empty = document.createElement("p");
-        empty.textContent = "GIF bulunamadı.";
-        gifResults.appendChild(empty);
-      }
-
     } catch (error) {
       console.error("GIF arama hatası:", error);
 
@@ -409,105 +367,31 @@
         message.textContent = error.message;
         gifResults.appendChild(message);
       }
-
     } finally {
       gifLoading = false;
-      updateLoadMore();
     }
   }
 
   // --------------------------------
-  // DAHA FAZLA GIF
+  // GIF GÖNDER
   // --------------------------------
 
-  function updateLoadMore() {
-    if (!loadMoreGifButton) return;
+  function sendGif(url) {
+    if (!socket.connected) {
+      alert("Sunucuya bağlı değilsin.");
+      return;
+    }
 
-    loadMoreGifButton.disabled =
-      gifLoading || !gifHasMore;
-
-    loadMoreGifButton.textContent = gifLoading
-      ? "Yükleniyor..."
-      : gifHasMore
-        ? "Daha fazla GIF yükle"
-        : "Başka GIF yok";
+    socket.emit("chat:message", url);
   }
 
-  if (gifSearchButton) {
-    gifSearchButton.addEventListener("click", () => {
+  gifSearchButton?.addEventListener("click", () => {
+    searchGifs(true);
+  });
+
+  gifSearchInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
       searchGifs(true);
-    });
-  }
-
-  if (gifSearchInput) {
-    gifSearchInput.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        searchGifs(true);
-      }
-    });
-  }
-
-  if (loadMoreGifButton) {
-    loadMoreGifButton.addEventListener("click", () => {
-      if (gifHasMore) {
-        searchGifs(false);
-      }
-    });
-  }
-
-  // --------------------------------
-  // MESAJDA GIF URL'SİNİ GÖSTER
-  // --------------------------------
-
-  const originalAddMessage = addMessage;
-
-  // Mesajları GIF olarak göstermek için ayrı kontrol
-  socket.off("chat:message");
-
-  socket.on("chat:message", data => {
-    if (data.text && /^https?:\/\/.+\.(gif)(\?.*)?$/i.test(data.text)) {
-      if (!messages) return;
-
-      const item = document.createElement("div");
-      item.className = data.username === username
-        ? "message own-message"
-        : "message";
-
-      const header = document.createElement("div");
-      header.className = "message-header";
-
-      const name = document.createElement("strong");
-      name.textContent = data.username || "Kullanıcı";
-
-      const time = document.createElement("small");
-      time.textContent = new Date(
-        data.time || Date.now()
-      ).toLocaleTimeString("tr-TR", {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-
-      const image = document.createElement("img");
-      image.src = data.text;
-      image.alt = "GIF";
-      image.className = "chat-gif";
-      image.loading = "lazy";
-
-      header.append(name, time);
-      item.append(header, image);
-
-      messages.appendChild(item);
-      messages.scrollTop = messages.scrollHeight;
-
-    } else {
-      originalAddMessage(
-        data,
-        data.username === username
-      );
-    }
-
-    if (data.username !== username) {
-      playSound("sounds/message.mp3");
     }
   });
 
@@ -516,10 +400,7 @@
   // --------------------------------
 
   if (username) {
-    if (usernameInput) {
-      usernameInput.value = username;
-    }
-
+    usernameInput.value = username;
     showChat();
 
     if (socket.connected) {
