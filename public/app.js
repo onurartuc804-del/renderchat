@@ -3,25 +3,15 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
-
-  // --------------------------------
-  // SOCKET.IO
-  // --------------------------------
-
   const socket = io();
+
   window.chatboxSocket = socket;
 
   let username = localStorage.getItem("chatbox_username") || "";
   window.chatboxUsername = username;
 
-  // --------------------------------
-  // HTML ELEMANLARI
-  // --------------------------------
-
   const loginScreen = $("loginScreen");
-  const chatScreen = $("chatScreen");
-  const voiceScreen = $("voiceScreen");
-
+  const mainScreen = $("mainScreen");
   const usernameInput = $("usernameInput");
   const joinButton = $("joinButton");
 
@@ -33,56 +23,30 @@
   const gifSearchButton = $("gifSearchButton");
   const gifResults = $("gifResults");
 
-  // --------------------------------
-  // SES
-  // --------------------------------
+  const youtubeInputModal = $("youtubeInputModal");
+  const youtubeUrlInput = $("youtubeUrlInput");
+  const youtubeModal = $("youtubeModal");
+  const youtubeFrame = $("youtubeFrame");
 
-  function playSound(path) {
-    try {
-      const audio = new Audio(path);
-      audio.volume = 0.5;
-      audio.play().catch(() => {});
-    } catch (error) {
-      console.warn("Ses çalınamadı:", error);
-    }
-  }
-
-  // --------------------------------
-  // EKRAN DEĞİŞTİRME
-  // --------------------------------
+  let currentVoiceRoom = false;
+  let isHost = false;
+  let gifOffset = 0;
+  let gifQuery = "";
+  let gifLoading = false;
 
   function showChat() {
-    loginScreen?.classList.add("hidden");
-    chatScreen?.classList.remove("hidden");
-    voiceScreen?.classList.remove("hidden");
+    loginScreen.classList.add("hidden");
+    mainScreen.classList.remove("hidden");
   }
-
-  function showJoin() {
-    loginScreen?.classList.remove("hidden");
-    chatScreen?.classList.add("hidden");
-    voiceScreen?.classList.add("hidden");
-  }
-
-  // --------------------------------
-  // KULLANICI GİRİŞİ
-  // --------------------------------
 
   function joinChat() {
-    const name = String(usernameInput?.value || "").trim();
+    const name = String(usernameInput.value || "").trim();
 
-    if (!name) {
-      alert("Bir kullanıcı adı yaz.");
-      return;
-    }
-
-    if (name.length > 24) {
-      alert("Kullanıcı adı en fazla 24 karakter olabilir.");
-      return;
-    }
+    if (!name) return alert("Kullanıcı adını yaz.");
+    if (name.length > 24) return alert("Kullanıcı adı en fazla 24 karakter.");
 
     username = name;
     window.chatboxUsername = username;
-
     localStorage.setItem("chatbox_username", username);
 
     showChat();
@@ -94,39 +58,22 @@
     }
   }
 
-  joinButton?.addEventListener("click", joinChat);
-
+  joinButton.addEventListener("click", joinChat);
   usernameInput.value = username;
 
-  usernameInput?.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
-      joinChat();
-    }
+  usernameInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") joinChat();
   });
 
   socket.on("connect", () => {
-    console.log("Chatbox sunucuya bağlandı.");
-
-    if (username) {
-      socket.emit("user:join", username);
-    }
+    if (username) socket.emit("user:join", username);
   });
 
-  socket.on("disconnect", () => {
-    console.log("Chatbox bağlantısı kesildi.");
-  });
-
-  // --------------------------------
-  // MESAJ GÖSTERME
-  // --------------------------------
-
-  function addMessage(data, own = false) {
-    if (!messages || !data) return;
+  function addMessage(data) {
+    if (!data || !messages) return;
 
     const item = document.createElement("div");
-    item.className = own
-      ? "message own-message"
-      : "message";
+    item.className = "message";
 
     const header = document.createElement("div");
     header.className = "message-header";
@@ -135,37 +82,23 @@
     name.textContent = data.username || "Kullanıcı";
 
     const time = document.createElement("small");
-
-    time.textContent = new Date(
-      data.time || Date.now()
-    ).toLocaleTimeString("tr-TR", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
+    time.textContent = new Date(data.time || Date.now())
+      .toLocaleTimeString("tr-TR", {hour:"2-digit",minute:"2-digit"});
 
     header.append(name, time);
 
     const text = String(data.text || "");
 
-    // GIF URL kontrolü
     if (/^https?:\/\/.+\.gif(\?.*)?$/i.test(text)) {
-      const image = document.createElement("img");
-
-      image.src = text;
-      image.alt = "GIF";
-      image.className = "chat-gif";
-      image.style.maxWidth = "100%";
-      image.style.maxHeight = "250px";
-      image.style.borderRadius = "8px";
-      image.loading = "lazy";
-
-      item.append(header, image);
+      const img = document.createElement("img");
+      img.src = text;
+      img.alt = "GIF";
+      img.className = "chat-gif";
+      item.append(header, img);
     } else {
       const content = document.createElement("div");
-
       content.className = "message-content";
       content.textContent = text;
-
       item.append(header, content);
     }
 
@@ -173,243 +106,191 @@
     messages.scrollTop = messages.scrollHeight;
   }
 
-  // --------------------------------
-  // MESAJ GEÇMİŞİ
-  // --------------------------------
-
   socket.on("chat:history", history => {
-    if (!messages) return;
-
     messages.innerHTML = "";
-
-    (Array.isArray(history) ? history : []).forEach(message => {
-      addMessage(
-        message,
-        message.username === username
-      );
-    });
+    (Array.isArray(history) ? history : []).forEach(addMessage);
   });
-
-  // --------------------------------
-  // YENİ MESAJ
-  // --------------------------------
 
   socket.on("chat:message", data => {
-    if (!data) return;
-
-    addMessage(data, data.username === username);
-
-    if (data.username !== username) {
-      playSound("sounds/message.mp3");
-    }
+    addMessage(data);
   });
-
-  // --------------------------------
-  // MESAJ GÖNDER
-  // --------------------------------
 
   function sendMessage() {
-    const text = String(messageInput?.value || "").trim();
-
+    const text = String(messageInput.value || "").trim();
     if (!text) return;
 
-    if (!socket.connected) {
-      alert("Sunucuya bağlı değilsin.");
-      return;
-    }
+    if (!socket.connected) return alert("Sunucuya bağlı değilsin.");
 
     socket.emit("chat:message", text);
-
     messageInput.value = "";
-    messageInput.focus();
   }
 
-  sendButton?.addEventListener("click", sendMessage);
+  sendButton.addEventListener("click", sendMessage);
 
-  messageInput?.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
+  messageInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") sendMessage();
   });
 
-  // --------------------------------
-  // ÇEVRİMİÇİ KULLANICILAR
-  // --------------------------------
-
-  socket.on("users:update", users => {
-    const onlineUsers = $("onlineUsers");
-    const onlineCount = $("onlineCount");
-
-    if (!onlineUsers) return;
-
-    onlineUsers.innerHTML = "";
-
-    const list = Array.isArray(users) ? users : [];
-
-    if (onlineCount) {
-      onlineCount.textContent = list.length;
-    }
-
-    list.forEach(name => {
-      const user = document.createElement("div");
-      user.className = "online-user";
-
-      const dot = document.createElement("span");
-      dot.className = "online-dot";
-
-      const label = document.createElement("span");
-      label.textContent = name;
-
-      user.append(dot, label);
-      onlineUsers.appendChild(user);
-    });
-  });
-
-  // --------------------------------
-  // GIF ARAMA
-  // --------------------------------
-
-  let gifQuery = "";
-  let gifOffset = 0;
-  let gifTotal = 0;
-  let gifLoading = false;
-  let gifHasMore = false;
-
-  const GIF_LIMIT = 50;
-  const GIF_MAX = 10000;
-
+  // GIF arama
   async function searchGifs(reset = true) {
     if (gifLoading) return;
 
     if (reset) {
-      gifQuery = String(gifSearchInput?.value || "").trim();
-
-      if (!gifQuery) {
-        gifQuery = "funny";
-      }
-
+      gifQuery = gifSearchInput.value.trim() || "funny";
       gifOffset = 0;
-      gifTotal = 0;
-      gifHasMore = false;
-
-      if (gifResults) {
-        gifResults.innerHTML = "";
-      }
+      gifResults.innerHTML = "";
+      gifResults.classList.remove("hidden");
     }
-
-    if (gifOffset >= GIF_MAX) return;
 
     gifLoading = true;
 
     try {
       const params = new URLSearchParams({
         q: gifQuery,
-        limit: String(GIF_LIMIT),
+        limit: "50",
         offset: String(gifOffset)
       });
 
-      const response = await fetch(
-        "/api/gifs?" + params.toString()
-      );
-
+      const response = await fetch("/api/gifs?" + params);
       const result = await response.json();
 
-      if (!response.ok) {
-        throw new Error(
-          result.error || "GIF araması başarısız."
-        );
-      }
+      if (!response.ok) throw new Error(result.error || "GIF arama hatası");
 
-      const list = Array.isArray(result.gifs)
-        ? result.gifs
-        : [];
-
-      list.forEach(gif => {
-        if (!gifResults || !gif.url) return;
-
+      (result.gifs || []).forEach(gif => {
         const button = document.createElement("button");
-        button.type = "button";
         button.className = "gif-result";
 
-        const image = document.createElement("img");
-        image.src = gif.preview || gif.url;
-        image.alt = gif.title || "GIF";
-        image.loading = "lazy";
+        const img = document.createElement("img");
+        img.src = gif.preview || gif.url;
+        img.alt = gif.title || "GIF";
 
-        button.appendChild(image);
-
+        button.appendChild(img);
         button.addEventListener("click", () => {
-          sendGif(gif.url);
+          socket.emit("chat:message", gif.url);
+          gifResults.classList.add("hidden");
         });
 
         gifResults.appendChild(button);
       });
 
-      gifTotal = Math.min(
-        GIF_MAX,
-        Number(result.total) || 0
-      );
-
-      gifOffset = Number(result.nextOffset) ||
-        gifOffset + list.length;
-
-      gifHasMore =
-        Boolean(result.hasMore) &&
-        gifOffset < GIF_MAX &&
-        gifOffset < gifTotal;
+      gifOffset = result.nextOffset || gifOffset + 50;
 
     } catch (error) {
-      console.error("GIF arama hatası:", error);
-
-      if (gifResults) {
-        const message = document.createElement("p");
-        message.textContent = error.message;
-        gifResults.appendChild(message);
-      }
+      alert(error.message);
     } finally {
       gifLoading = false;
     }
   }
 
-  // --------------------------------
-  // GIF GÖNDER
-  // --------------------------------
+  gifSearchButton.addEventListener("click", () => searchGifs(true));
 
-  function sendGif(url) {
-    if (!socket.connected) {
-      alert("Sunucuya bağlı değilsin.");
-      return;
+  gifSearchInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") searchGifs(true);
+  });
+
+  // Sesli oda durumunu app.js de takip eder
+  socket.on("voice:host-status", data => {
+    currentVoiceRoom = Boolean(data.inRoom);
+    isHost = Boolean(data.isHost);
+  });
+
+  // YouTube penceresi
+  $("youtubeOpenButton").addEventListener("click", () => {
+    if (!currentVoiceRoom) {
+      return alert("Önce bir sesli odaya katıl.");
     }
 
-    socket.emit("chat:message", url);
+    if (!isHost) {
+      return alert("YouTube videosunu yalnızca oda sahibi paylaşabilir.");
+    }
+
+    youtubeInputModal.classList.remove("hidden");
+    youtubeUrlInput.focus();
+  });
+
+  $("youtubeCancelButton").addEventListener("click", () => {
+    youtubeInputModal.classList.add("hidden");
+  });
+
+  function extractYoutubeId(value) {
+    try {
+      const url = new URL(value.trim());
+
+      if (url.hostname.includes("youtu.be")) {
+        return url.pathname.slice(1).split("/")[0];
+      }
+
+      if (url.hostname.includes("youtube.com")) {
+        if (url.pathname === "/watch") {
+          return url.searchParams.get("v");
+        }
+
+        const parts = url.pathname.split("/");
+        const index = parts.findIndex(p =>
+          ["embed", "shorts", "live"].includes(p)
+        );
+
+        if (index >= 0) return parts[index + 1];
+      }
+    } catch {}
+
+    return null;
   }
 
-  gifSearchButton?.addEventListener("click", () => {
-    searchGifs(true);
+  $("youtubePlayButton").addEventListener("click", () => {
+    const url = youtubeUrlInput.value.trim();
+    const videoId = extractYoutubeId(url);
+
+    if (!videoId) {
+      return alert("Geçerli bir YouTube URL'si yaz.");
+    }
+
+    socket.emit("youtube:play", videoId, result => {
+      if (!result?.ok) {
+        return alert(result?.error || "Video paylaşılamadı.");
+      }
+
+      youtubeInputModal.classList.add("hidden");
+      youtubeUrlInput.value = "";
+    });
   });
 
-  gifSearchInput?.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
-      searchGifs(true);
+  function openYoutube(videoId) {
+    youtubeFrame.src =
+      "https://www.youtube.com/embed/" +
+      encodeURIComponent(videoId) +
+      "?autoplay=1&rel=0";
+
+    youtubeModal.classList.remove("hidden");
+  }
+
+  function closeYoutube() {
+    youtubeFrame.src = "";
+    youtubeModal.classList.add("hidden");
+  }
+
+  $("youtubeCloseButton").addEventListener("click", () => {
+    if (isHost && currentVoiceRoom) {
+      socket.emit("youtube:close");
+    } else {
+      closeYoutube();
     }
   });
 
-  // --------------------------------
-  // BAŞLANGIÇ
-  // --------------------------------
+  socket.on("youtube:play", data => {
+    if (data?.videoId) openYoutube(data.videoId);
+  });
 
+  socket.on("youtube:close", closeYoutube);
+
+  // Başlangıç
   if (username) {
     usernameInput.value = username;
     showChat();
-
-    if (socket.connected) {
-      socket.emit("user:join", username);
-    }
   } else {
-    showJoin();
+    loginScreen.classList.remove("hidden");
+    mainScreen.classList.add("hidden");
   }
 
-  console.log("Chatbox app.js yüklendi.");
-
+  console.log("Chatbox app.js hazır.");
 })();
