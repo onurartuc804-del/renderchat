@@ -9,27 +9,21 @@
   let currentVoiceRoom = "";
   let isVoiceHost = false;
 
-  const loginScreen = $("loginScreen");
-  const mainScreen = $("mainScreen");
-  const chatScreen = $("chatScreen");
-  const gifScreen = $("gifScreen");
-  const voiceScreen = $("voiceScreen");
+  function showChat() {
+    $("loginScreen").classList.add("hidden");
+    $("mainScreen").classList.remove("hidden");
 
-  function showScreen(screen) {
-    loginScreen.classList.add("hidden");
-    mainScreen.classList.remove("hidden");
-
-    chatScreen.classList.remove("hidden");
-    gifScreen.classList.add("hidden");
-    voiceScreen.classList.add("hidden");
-
-    if (screen) {
-      $(screen).classList.remove("hidden");
-    }
+    $("chatScreen").classList.remove("hidden");
+    $("gifScreen").classList.add("hidden");
+    $("voiceScreen").classList.add("hidden");
+    $("youtubeInputModal").classList.add("hidden");
   }
 
-  function showChat() {
-    showScreen(null);
+  function showPanel(id) {
+    showChat();
+
+    $("chatScreen").classList.add("hidden");
+    $(id).classList.remove("hidden");
   }
 
   function playSound(id) {
@@ -53,8 +47,6 @@
 
     socket.emit("user:join", username);
 
-    loginScreen.classList.add("hidden");
-    mainScreen.classList.remove("hidden");
     showChat();
   }
 
@@ -66,11 +58,11 @@
 
   // SİMGELER
   $("openVoiceButton").addEventListener("click", () => {
-    showScreen("voiceScreen");
+    showPanel("voiceScreen");
   });
 
   $("openGifButton").addEventListener("click", () => {
-    showScreen("gifScreen");
+    showPanel("gifScreen");
     $("gifSearchInput").focus();
   });
 
@@ -78,14 +70,13 @@
     $("youtubeInputModal").classList.remove("hidden");
   });
 
-  // KAPATMA SİMGELERİ
+  // GERİ / KAPAT
   document.querySelectorAll("[data-close]").forEach(button => {
-    button.addEventListener("click", () => {
-      showChat();
-    });
+    button.addEventListener("click", showChat);
   });
 
   $("voiceLeaveButton").addEventListener("click", () => {
+    socket.emit("voice:leave");
     showChat();
   });
 
@@ -93,7 +84,7 @@
     $("youtubeInputModal").classList.add("hidden");
   });
 
-  // SOHBET MESAJI
+  // GENEL MESAJ
   function sendMessage() {
     const input = $("messageInput");
     const text = input.value.trim();
@@ -101,6 +92,7 @@
     if (!text) return;
 
     socket.emit("chat:message", text);
+
     input.value = "";
     input.focus();
   }
@@ -112,8 +104,8 @@
   });
 
   function addMessage(data) {
-    const message = document.createElement("div");
-    message.className = "message";
+    const item = document.createElement("div");
+    item.className = "message";
 
     const name = document.createElement("strong");
     name.textContent = data.username || "Kullanıcı";
@@ -121,8 +113,8 @@
     const text = document.createElement("span");
     text.textContent = data.text || "";
 
-    message.append(name, text);
-    $("messages").appendChild(message);
+    item.append(name, text);
+    $("messages").appendChild(item);
 
     $("messages").scrollTop = $("messages").scrollHeight;
   }
@@ -132,28 +124,23 @@
   socket.on("chat:history", history => {
     $("messages").innerHTML = "";
 
-    if (!Array.isArray(history)) return;
-
-    history.forEach(addMessage);
+    if (Array.isArray(history)) {
+      history.forEach(addMessage);
+    }
   });
 
   // GIF ARAMA
   let gifOffset = 0;
   let gifQuery = "";
 
-  async function searchGifs(reset = true) {
+  async function searchGifs() {
     const query = $("gifSearchInput").value.trim();
 
-    if (!query) {
-      alert("GIF aramak için bir şey yaz.");
-      return;
-    }
+    if (!query) return;
 
-    if (reset) {
-      gifQuery = query;
-      gifOffset = 0;
-      $("gifResults").innerHTML = "";
-    }
+    gifQuery = query;
+    gifOffset = 0;
+    $("gifResults").innerHTML = "";
 
     try {
       const response = await fetch(
@@ -166,19 +153,18 @@
         throw new Error(data.error || "GIF araması başarısız.");
       }
 
-      const gifs = Array.isArray(data) ? data : data.gifs || [];
+      const gifs = data.gifs || [];
 
       gifs.forEach(gif => {
-        const url = gif.url || gif.images?.fixed_height?.url;
-        if (!url) return;
+        if (!gif.url) return;
 
         const img = document.createElement("img");
-        img.src = url;
+        img.src = gif.url;
         img.alt = "GIF";
         img.loading = "lazy";
 
         img.addEventListener("click", () => {
-          socket.emit("chat:message", url);
+          socket.emit("chat:message", gif.url);
           showChat();
         });
 
@@ -187,17 +173,17 @@
 
       gifOffset += gifs.length;
     } catch (error) {
-      alert("GIF yüklenemedi: " + error.message);
+      alert(error.message);
     }
   }
 
-  $("gifSearchButton").addEventListener("click", () => searchGifs(true));
+  $("gifSearchButton").addEventListener("click", searchGifs);
 
   $("gifSearchInput").addEventListener("keydown", event => {
-    if (event.key === "Enter") searchGifs(true);
+    if (event.key === "Enter") searchGifs();
   });
 
-  // YOUTUBE
+  // YOUTUBE URL
   function getYoutubeId(url) {
     try {
       const parsed = new URL(url);
@@ -222,19 +208,16 @@
   }
 
   $("youtubePlayButton").addEventListener("click", () => {
-    const url = $("youtubeUrlInput").value.trim();
-    const videoId = getYoutubeId(url);
+    const videoId = getYoutubeId($("youtubeUrlInput").value.trim());
 
     if (!videoId) {
-      alert("Geçerli bir YouTube video bağlantısı gir.");
+      alert("Geçerli YouTube bağlantısı gir.");
       return;
     }
 
     $("youtubeInputModal").classList.add("hidden");
 
-    socket.emit("youtube:play", {
-      videoId
-    });
+    socket.emit("youtube:play", { videoId });
   });
 
   function playYoutube(videoId) {
@@ -276,13 +259,19 @@
   socket.on("voice:room-closed", () => {
     currentVoiceRoom = "";
     isVoiceHost = false;
+
+    closeYoutube();
     showChat();
   });
 
-  // Dışarıdan kullanılabilsin
   window.Chatbox = {
+    socket,
     showChat,
-    showScreen,
-    playSound
+    showPanel,
+    playSound,
+    setVoiceRoom(name, host) {
+      currentVoiceRoom = name || "";
+      isVoiceHost = !!host;
+    }
   };
 })();
