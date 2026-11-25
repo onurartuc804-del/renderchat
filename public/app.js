@@ -5,272 +5,254 @@
   const $ = id => document.getElementById(id);
   const socket = io();
 
-  window.chatboxSocket = socket;
-
-  let username = localStorage.getItem("chatbox_username") || "";
-  window.chatboxUsername = username;
+  let username = "";
+  let currentVoiceRoom = "";
+  let isVoiceHost = false;
 
   const loginScreen = $("loginScreen");
   const mainScreen = $("mainScreen");
-  const usernameInput = $("usernameInput");
-  const joinButton = $("joinButton");
+  const chatScreen = $("chatScreen");
+  const gifScreen = $("gifScreen");
+  const voiceScreen = $("voiceScreen");
 
-  const messages = $("messages");
-  const messageInput = $("messageInput");
-  const sendButton = $("sendButton");
-
-  const gifSearchInput = $("gifSearchInput");
-  const gifSearchButton = $("gifSearchButton");
-  const gifResults = $("gifResults");
-
-  const youtubeInputModal = $("youtubeInputModal");
-  const youtubeUrlInput = $("youtubeUrlInput");
-  const youtubeModal = $("youtubeModal");
-  const youtubeFrame = $("youtubeFrame");
-
-  let currentVoiceRoom = false;
-  let isHost = false;
-  let gifOffset = 0;
-  let gifQuery = "";
-  let gifLoading = false;
-
-  function showChat() {
+  function showScreen(screen) {
     loginScreen.classList.add("hidden");
     mainScreen.classList.remove("hidden");
-  }
 
-  function joinChat() {
-    const name = String(usernameInput.value || "").trim();
+    chatScreen.classList.remove("hidden");
+    gifScreen.classList.add("hidden");
+    voiceScreen.classList.add("hidden");
 
-    if (!name) return alert("Kullanıcı adını yaz.");
-    if (name.length > 24) return alert("Kullanıcı adı en fazla 24 karakter.");
-
-    username = name;
-    window.chatboxUsername = username;
-    localStorage.setItem("chatbox_username", username);
-
-    showChat();
-
-    if (socket.connected) {
-      socket.emit("user:join", username);
-    } else {
-      socket.connect();
+    if (screen) {
+      $(screen).classList.remove("hidden");
     }
   }
 
-  joinButton.addEventListener("click", joinChat);
-  usernameInput.value = username;
+  function showChat() {
+    showScreen(null);
+  }
 
-  usernameInput.addEventListener("keydown", e => {
-    if (e.key === "Enter") joinChat();
+  function playSound(id) {
+    const audio = $(id);
+    if (!audio) return;
+
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  }
+
+  // KAYIT
+  function joinChat() {
+    const name = $("usernameInput").value.trim();
+
+    if (!name) {
+      alert("Kullanıcı adını yaz.");
+      return;
+    }
+
+    username = name.slice(0, 24);
+
+    socket.emit("user:join", username);
+
+    loginScreen.classList.add("hidden");
+    mainScreen.classList.remove("hidden");
+    showChat();
+  }
+
+  $("joinButton").addEventListener("click", joinChat);
+
+  $("usernameInput").addEventListener("keydown", event => {
+    if (event.key === "Enter") joinChat();
   });
 
-  socket.on("connect", () => {
-    if (username) socket.emit("user:join", username);
+  // SİMGELER
+  $("openVoiceButton").addEventListener("click", () => {
+    showScreen("voiceScreen");
+  });
+
+  $("openGifButton").addEventListener("click", () => {
+    showScreen("gifScreen");
+    $("gifSearchInput").focus();
+  });
+
+  $("openYoutubeButton").addEventListener("click", () => {
+    $("youtubeInputModal").classList.remove("hidden");
+  });
+
+  // KAPATMA SİMGELERİ
+  document.querySelectorAll("[data-close]").forEach(button => {
+    button.addEventListener("click", () => {
+      showChat();
+    });
+  });
+
+  $("voiceLeaveButton").addEventListener("click", () => {
+    showChat();
+  });
+
+  $("youtubeCancelButton").addEventListener("click", () => {
+    $("youtubeInputModal").classList.add("hidden");
+  });
+
+  // SOHBET MESAJI
+  function sendMessage() {
+    const input = $("messageInput");
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    socket.emit("chat:message", text);
+    input.value = "";
+    input.focus();
+  }
+
+  $("sendButton").addEventListener("click", sendMessage);
+
+  $("messageInput").addEventListener("keydown", event => {
+    if (event.key === "Enter") sendMessage();
   });
 
   function addMessage(data) {
-    if (!data || !messages) return;
-
-    const item = document.createElement("div");
-    item.className = "message";
-
-    const header = document.createElement("div");
-    header.className = "message-header";
+    const message = document.createElement("div");
+    message.className = "message";
 
     const name = document.createElement("strong");
     name.textContent = data.username || "Kullanıcı";
 
-    const time = document.createElement("small");
-    time.textContent = new Date(data.time || Date.now())
-      .toLocaleTimeString("tr-TR", {hour:"2-digit",minute:"2-digit"});
+    const text = document.createElement("span");
+    text.textContent = data.text || "";
 
-    header.append(name, time);
+    message.append(name, text);
+    $("messages").appendChild(message);
 
-    const text = String(data.text || "");
-
-    if (/^https?:\/\/.+\.gif(\?.*)?$/i.test(text)) {
-      const img = document.createElement("img");
-      img.src = text;
-      img.alt = "GIF";
-      img.className = "chat-gif";
-      item.append(header, img);
-    } else {
-      const content = document.createElement("div");
-      content.className = "message-content";
-      content.textContent = text;
-      item.append(header, content);
-    }
-
-    messages.appendChild(item);
-    messages.scrollTop = messages.scrollHeight;
+    $("messages").scrollTop = $("messages").scrollHeight;
   }
+
+  socket.on("chat:message", addMessage);
 
   socket.on("chat:history", history => {
-    messages.innerHTML = "";
-    (Array.isArray(history) ? history : []).forEach(addMessage);
+    $("messages").innerHTML = "";
+
+    if (!Array.isArray(history)) return;
+
+    history.forEach(addMessage);
   });
 
-  socket.on("chat:message", data => {
-    addMessage(data);
-  });
+  // GIF ARAMA
+  let gifOffset = 0;
+  let gifQuery = "";
 
-  function sendMessage() {
-    const text = String(messageInput.value || "").trim();
-    if (!text) return;
-
-    if (!socket.connected) return alert("Sunucuya bağlı değilsin.");
-
-    socket.emit("chat:message", text);
-    messageInput.value = "";
-  }
-
-  sendButton.addEventListener("click", sendMessage);
-
-  messageInput.addEventListener("keydown", e => {
-    if (e.key === "Enter") sendMessage();
-  });
-
-  // GIF arama
   async function searchGifs(reset = true) {
-    if (gifLoading) return;
+    const query = $("gifSearchInput").value.trim();
+
+    if (!query) {
+      alert("GIF aramak için bir şey yaz.");
+      return;
+    }
 
     if (reset) {
-      gifQuery = gifSearchInput.value.trim() || "funny";
+      gifQuery = query;
       gifOffset = 0;
-      gifResults.innerHTML = "";
-      gifResults.classList.remove("hidden");
+      $("gifResults").innerHTML = "";
     }
 
-    gifLoading = true;
-
     try {
-      const params = new URLSearchParams({
-        q: gifQuery,
-        limit: "50",
-        offset: String(gifOffset)
-      });
+      const response = await fetch(
+        `/api/gifs?q=${encodeURIComponent(gifQuery)}&offset=${gifOffset}`
+      );
 
-      const response = await fetch("/api/gifs?" + params);
-      const result = await response.json();
+      const data = await response.json();
 
-      if (!response.ok) throw new Error(result.error || "GIF arama hatası");
+      if (!response.ok) {
+        throw new Error(data.error || "GIF araması başarısız.");
+      }
 
-      (result.gifs || []).forEach(gif => {
-        const button = document.createElement("button");
-        button.className = "gif-result";
+      const gifs = Array.isArray(data) ? data : data.gifs || [];
+
+      gifs.forEach(gif => {
+        const url = gif.url || gif.images?.fixed_height?.url;
+        if (!url) return;
 
         const img = document.createElement("img");
-        img.src = gif.preview || gif.url;
-        img.alt = gif.title || "GIF";
+        img.src = url;
+        img.alt = "GIF";
+        img.loading = "lazy";
 
-        button.appendChild(img);
-        button.addEventListener("click", () => {
-          socket.emit("chat:message", gif.url);
-          gifResults.classList.add("hidden");
+        img.addEventListener("click", () => {
+          socket.emit("chat:message", url);
+          showChat();
         });
 
-        gifResults.appendChild(button);
+        $("gifResults").appendChild(img);
       });
 
-      gifOffset = result.nextOffset || gifOffset + 50;
-
+      gifOffset += gifs.length;
     } catch (error) {
-      alert(error.message);
-    } finally {
-      gifLoading = false;
+      alert("GIF yüklenemedi: " + error.message);
     }
   }
 
-  gifSearchButton.addEventListener("click", () => searchGifs(true));
+  $("gifSearchButton").addEventListener("click", () => searchGifs(true));
 
-  gifSearchInput.addEventListener("keydown", e => {
-    if (e.key === "Enter") searchGifs(true);
+  $("gifSearchInput").addEventListener("keydown", event => {
+    if (event.key === "Enter") searchGifs(true);
   });
 
-  // Sesli oda durumunu app.js de takip eder
-  socket.on("voice:host-status", data => {
-    currentVoiceRoom = Boolean(data.inRoom);
-    isHost = Boolean(data.isHost);
-  });
-
-  // YouTube penceresi
-  $("youtubeOpenButton").addEventListener("click", () => {
-    if (!currentVoiceRoom) {
-      return alert("Önce bir sesli odaya katıl.");
-    }
-
-    if (!isHost) {
-      return alert("YouTube videosunu yalnızca oda sahibi paylaşabilir.");
-    }
-
-    youtubeInputModal.classList.remove("hidden");
-    youtubeUrlInput.focus();
-  });
-
-  $("youtubeCancelButton").addEventListener("click", () => {
-    youtubeInputModal.classList.add("hidden");
-  });
-
-  function extractYoutubeId(value) {
+  // YOUTUBE
+  function getYoutubeId(url) {
     try {
-      const url = new URL(value.trim());
+      const parsed = new URL(url);
+      let id = "";
 
-      if (url.hostname.includes("youtu.be")) {
-        return url.pathname.slice(1).split("/")[0];
-      }
-
-      if (url.hostname.includes("youtube.com")) {
-        if (url.pathname === "/watch") {
-          return url.searchParams.get("v");
+      if (parsed.hostname.includes("youtu.be")) {
+        id = parsed.pathname.slice(1);
+      } else if (parsed.hostname.includes("youtube.com")) {
+        if (parsed.pathname === "/watch") {
+          id = parsed.searchParams.get("v") || "";
+        } else if (parsed.pathname.startsWith("/embed/")) {
+          id = parsed.pathname.split("/")[2] || "";
+        } else if (parsed.pathname.startsWith("/shorts/")) {
+          id = parsed.pathname.split("/")[2] || "";
         }
-
-        const parts = url.pathname.split("/");
-        const index = parts.findIndex(p =>
-          ["embed", "shorts", "live"].includes(p)
-        );
-
-        if (index >= 0) return parts[index + 1];
       }
-    } catch {}
 
-    return null;
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : "";
+    } catch {
+      return "";
+    }
   }
 
   $("youtubePlayButton").addEventListener("click", () => {
-    const url = youtubeUrlInput.value.trim();
-    const videoId = extractYoutubeId(url);
+    const url = $("youtubeUrlInput").value.trim();
+    const videoId = getYoutubeId(url);
 
     if (!videoId) {
-      return alert("Geçerli bir YouTube URL'si yaz.");
+      alert("Geçerli bir YouTube video bağlantısı gir.");
+      return;
     }
 
-    socket.emit("youtube:play", videoId, result => {
-      if (!result?.ok) {
-        return alert(result?.error || "Video paylaşılamadı.");
-      }
+    $("youtubeInputModal").classList.add("hidden");
 
-      youtubeInputModal.classList.add("hidden");
-      youtubeUrlInput.value = "";
+    socket.emit("youtube:play", {
+      videoId
     });
   });
 
-  function openYoutube(videoId) {
-    youtubeFrame.src =
-      "https://www.youtube.com/embed/" +
-      encodeURIComponent(videoId) +
-      "?autoplay=1&rel=0";
+  function playYoutube(videoId) {
+    if (!videoId) return;
 
-    youtubeModal.classList.remove("hidden");
+    $("youtubeFrame").src =
+      `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1`;
+
+    $("youtubeModal").classList.remove("hidden");
   }
 
   function closeYoutube() {
-    youtubeFrame.src = "";
-    youtubeModal.classList.add("hidden");
+    $("youtubeFrame").src = "";
+    $("youtubeModal").classList.add("hidden");
   }
 
   $("youtubeCloseButton").addEventListener("click", () => {
-    if (isHost && currentVoiceRoom) {
+    if (currentVoiceRoom && isVoiceHost) {
       socket.emit("youtube:close");
     } else {
       closeYoutube();
@@ -278,19 +260,29 @@
   });
 
   socket.on("youtube:play", data => {
-    if (data?.videoId) openYoutube(data.videoId);
+    playYoutube(data.videoId);
   });
 
   socket.on("youtube:close", closeYoutube);
 
-  // Başlangıç
-  if (username) {
-    usernameInput.value = username;
-    showChat();
-  } else {
-    loginScreen.classList.remove("hidden");
-    mainScreen.classList.add("hidden");
-  }
+  // ODA DURUMU
+  socket.on("voice:host-status", data => {
+    if (!data) return;
 
-  console.log("Chatbox app.js hazır.");
+    currentVoiceRoom = data.roomName || "";
+    isVoiceHost = !!data.isHost;
+  });
+
+  socket.on("voice:room-closed", () => {
+    currentVoiceRoom = "";
+    isVoiceHost = false;
+    showChat();
+  });
+
+  // Dışarıdan kullanılabilsin
+  window.Chatbox = {
+    showChat,
+    showScreen,
+    playSound
+  };
 })();
