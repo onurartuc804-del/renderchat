@@ -1,7 +1,8 @@
+
 {
   "name": "chatbox",
   "version": "1.0.0",
-  "description": "Chatbox real-time chat and voice rooms",
+  "description": "Chatbox real-time chat",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,3 +12,4 @@
     "socket.io": "^4.8.1"
   }
 }
+
