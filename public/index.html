@@ -221,6 +221,7 @@
       display: block;
       max-width: 260px;
       width: 100%;
+      height: auto;
       border-radius: 10px;
     }
 
@@ -249,7 +250,7 @@
       background: #475569;
     }
 
-    /* GIF PENCERESİ */
+    /* GIF MODALI */
 
     #gifModal {
       display: none;
@@ -265,13 +266,14 @@
     .gif-panel {
       width: 100%;
       max-width: 650px;
-      max-height: 85vh;
+      max-height: 90vh;
       display: flex;
       flex-direction: column;
       background: #172033;
       border: 1px solid #334155;
       border-radius: 16px;
       padding: 16px;
+      overflow: hidden;
     }
 
     .gif-header {
@@ -279,11 +281,18 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 15px;
+      flex-shrink: 0;
+    }
+
+    .gif-header h2 {
+      margin: 0;
+      font-size: 24px;
     }
 
     .gif-search {
       display: flex;
       gap: 8px;
+      flex-shrink: 0;
     }
 
     .gif-search input {
@@ -291,33 +300,60 @@
       min-width: 0;
     }
 
+    /* GIF KUTULARI */
+
     #gifResults {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 9px;
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 10px !important;
+      align-items: stretch !important;
       overflow-y: auto;
-      padding: 12px 0;
       min-height: 120px;
+      padding: 12px 0;
     }
 
-    .gif-result {
-      padding: 0;
-      border: 0;
-      background: #0f172a;
-      border-radius: 8px;
-      overflow: hidden;
+    #gifResults .gif-result {
+      display: block !important;
+      width: 100% !important;
+      height: 130px !important;
+      min-height: 130px !important;
+      max-height: 130px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      border: none !important;
+      border-radius: 10px !important;
+      background: #0f172a !important;
+      flex: none !important;
     }
 
-    .gif-result img {
-      display: block;
-      width: 100%;
-      height: 110px;
-      object-fit: cover;
+    #gifResults .gif-result img {
+      display: block !important;
+      width: 100% !important;
+      height: 130px !important;
+      min-height: 130px !important;
+      max-height: 130px !important;
+      object-fit: cover !important;
+      border-radius: 10px !important;
+    }
+
+    #gifResults .gif-result:hover {
+      transform: scale(1.02);
+    }
+
+    #gifResults .gif-result:active {
+      transform: scale(0.98);
     }
 
     #loadMoreGifButton {
       width: 100%;
       margin-top: 8px;
+      flex-shrink: 0;
+    }
+
+    #loadMoreGifButton:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     /* SESLİ ODA */
@@ -419,12 +455,29 @@
         padding: 10px;
       }
 
-      #gifResults {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
       .topbar {
         padding: 0 12px;
+      }
+
+      .gif-panel {
+        max-height: 88vh;
+        padding: 12px;
+      }
+
+      #gifResults .gif-result,
+      #gifResults .gif-result img {
+        height: 120px !important;
+        min-height: 120px !important;
+        max-height: 120px !important;
+      }
+    }
+
+    @media (max-width: 360px) {
+      #gifResults .gif-result,
+      #gifResults .gif-result img {
+        height: 100px !important;
+        min-height: 100px !important;
+        max-height: 100px !important;
       }
     }
   </style>
@@ -432,7 +485,7 @@
 
 <body>
 
-  <!-- GİRİŞ EKRANI -->
+  <!-- GİRİŞ -->
 
   <section id="joinScreen" class="screen">
     <div class="login-card">
@@ -454,7 +507,7 @@
     </div>
   </section>
 
-  <!-- SOHBET EKRANI -->
+  <!-- SOHBET -->
 
   <section id="chatScreen" class="screen">
 
@@ -467,8 +520,6 @@
     </header>
 
     <div class="chat-layout">
-
-      <!-- KULLANICILAR -->
 
       <aside class="sidebar">
         <h3>ÇEVRİMİÇİ KULLANICILAR</h3>
@@ -490,12 +541,14 @@
           style="margin-top:10px;"
         >
 
-        <button id="voiceJoinButton" class="primary-button" style="width:100%;margin-top:8px;">
+        <button
+          id="voiceJoinButton"
+          class="primary-button"
+          style="width:100%;margin-top:8px;"
+        >
           Odaya Katıl
         </button>
       </aside>
-
-      <!-- GENEL SOHBET -->
 
       <main class="chat-main">
 
@@ -529,7 +582,7 @@
     </div>
   </section>
 
-  <!-- GIF ARAMA PENCERESİ -->
+  <!-- GIF ARAMA -->
 
   <div id="gifModal">
 
@@ -559,22 +612,24 @@
 
       <div id="gifResults"></div>
 
-      <button id="loadMoreGifButton" class="primary-button" disabled>
+      <button
+        id="loadMoreGifButton"
+        class="primary-button"
+        disabled
+      >
         Daha fazla GIF yükle
       </button>
 
     </div>
   </div>
 
-  <!-- SESLİ ODA EKRANI -->
+  <!-- SESLİ ODA -->
 
   <section id="voiceScreen">
 
     <div class="voice-panel">
 
-      <h2 id="voiceRoomTitle">
-        Sesli Oda
-      </h2>
+      <h2 id="voiceRoomTitle">Sesli Oda</h2>
 
       <p id="voiceRoomStatus">
         Oda bağlantısı bekleniyor...
@@ -615,7 +670,10 @@
             maxlength="500"
           >
 
-          <button id="voiceMessageSendButton" class="primary-button">
+          <button
+            id="voiceMessageSendButton"
+            class="primary-button"
+          >
             Gönder
           </button>
 
@@ -626,7 +684,6 @@
       <div id="voiceAudioContainer"></div>
 
     </div>
-
   </section>
 
   <!-- SES DOSYALARI -->
@@ -638,7 +695,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- UYGULAMA DOSYALARI -->
+  <!-- CHATBOX DOSYALARI -->
 
   <script src="app.js"></script>
   <script src="voice.js"></script>
