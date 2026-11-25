@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chatbox</title>
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -12,11 +11,8 @@
   <section id="loginScreen">
     <div class="loginBox">
       <h1>Chatbox</h1>
-      <p>Gerçek zamanlı sohbet</p>
-
       <input id="username" placeholder="Kullanıcı adın">
       <input id="room" placeholder="Oda adı" value="Genel">
-
       <button id="joinButton">Sohbete Katıl</button>
     </div>
   </section>
@@ -27,7 +23,20 @@
         <h2>Chatbox</h2>
         <span id="roomTitle">Genel</span>
       </div>
-      <button id="leaveButton">Çık</button>
+
+      <div class="roomMenu">
+        <button id="roomIcon" class="iconButton" title="Odalar">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M10 21v-4h4v4"
+              fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <div id="roomDropdown" class="dropdown hidden">
+          <button id="createRoomButton">＋ Oda oluştur</button>
+        </div>
+      </div>
     </header>
 
     <main>
@@ -39,13 +48,31 @@
       <div class="chatArea">
         <div id="messages"></div>
 
+        <div id="gifPanel" class="gifPanel hidden">
+          <input id="gifSearch" placeholder="GIF ara...">
+          <div id="gifResults" class="gifResults"></div>
+        </div>
+
         <form id="messageForm">
+          <button type="button" id="gifButton" class="gifButton">GIF</button>
           <input id="messageInput" placeholder="Mesaj yaz..." autocomplete="off">
-          <button type="submit">Gönder</button>
+          <button type="submit" id="sendButton">➤</button>
         </form>
       </div>
     </main>
   </section>
+
+  <!-- Oda oluşturma penceresi -->
+  <div id="roomModal" class="modal hidden">
+    <div class="modalBox">
+      <h2>Oda oluştur</h2>
+      <input id="newRoomName" placeholder="Oda adı">
+      <div class="modalButtons">
+        <button id="cancelRoomButton" class="secondaryButton">İptal</button>
+        <button id="confirmRoomButton">Oluştur</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/app.js"></script>
